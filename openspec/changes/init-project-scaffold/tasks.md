@@ -11,6 +11,6 @@
 
 ## 3. Docker Compose & Environment
 
-- [ ] 3.1 Create multi-stage `Dockerfile` in `services/storage-service/`.
+- [x] 3.1 Create multi-stage `Dockerfile` in `services/storage-service/`.
 - [ ] 3.2 Create `docker-compose.yml` mapping port `32214` to container `8080`.
 - [ ] 3.3 Verify Docker Compose environment and test `/health` endpoint output.
