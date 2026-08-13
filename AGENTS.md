@@ -49,5 +49,6 @@ Avoid repeating the prefix action in the description sentence.
 - **Formatting:** All Go code must be formatted using standard `gofmt`.
 - **Error Handling:** Explicit error checking. Never swallow or suppress errors.
 - **Imports:** Standard Go library imports grouped separately from third-party or internal packages.
-- **Proactive Documentation Maintenance:** Whenever project architecture, workflow rules, agent permissions, or conventions evolve, AI agents MUST automatically update `AGENTS.md` and `README.md` without needing explicit reminders from the user.
+- **Proactive Documentation Maintenance:** Whenever project architecture, workflow rules, agent permissions, or conventions evolve, AI agents MUST automatically update `AGENTS.md` and `README.md` without needing explicit reminders from the user. When completing or archiving a project phase, AI agents MUST update the corresponding checkboxes `- [x]` in `ROADMAP.md`.
+
 
