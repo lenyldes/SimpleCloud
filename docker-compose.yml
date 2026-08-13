@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  storage-service:
+    build:
+      context: ./services/storage-service
+      dockerfile: Dockerfile
+    container_name: simplecloud-storage-service
+    ports:
+      - "32214:8080"
+    environment:
+      - PORT=8080
+    restart: unless-stopped
