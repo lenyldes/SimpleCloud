@@ -36,6 +36,9 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 ### 5. Guided Prompt Handoff Protocol
 - **Strict Role Pause:** When an agent finishes its designated role task (e.g. `[TEST-AGENT]` finishes writing failing tests in RED state, or `[CODE-AGENT]` makes tests pass in GREEN state), it MUST NOT automatically switch roles. It MUST stop execution, commit its changes, update task status, and output a ready-to-use copy-paste prompt for the user to send to the next agent in sequence (`[ORCHESTRATOR-AGENT]` -> `[TEST-AGENT]` -> `[CODE-AGENT]` -> `[AUDIT-AGENT]`).
 - **Copy-Paste Prompt Format:** Every agent handoff MUST output a formatted block containing the exact prompt the user should copy and paste for the next role or step.
+- **Explicit Trigger Type Labeling:** Handoff prompts MUST explicitly state whether the prompt is:
+  - ⚡ **OpenSpec Slash Command:** Start with `/opsx-propose`, `/opsx-explore`, `/opsx-apply`, or `/opsx-archive` when launching/managing OpenSpec phases.
+  - 💬 **Plain Text Prompt:** Standard text prompt without slash commands for intermediate TDD roles (`[TEST-AGENT]`, `[CODE-AGENT]`, `[AUDIT-AGENT]`).
 
 ---
 
