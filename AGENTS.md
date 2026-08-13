@@ -37,14 +37,14 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 - **Strict Role Pause:** When an agent finishes its designated role task (e.g. `[TEST-AGENT]` finishes writing failing tests in RED state, or `[CODE-AGENT]` makes tests pass in GREEN state), it MUST NOT automatically switch roles. It MUST stop execution, commit its changes, update task status, and output a ready-to-use copy-paste prompt for the user to send to the next agent in sequence (`[ORCHESTRATOR-AGENT]` -> `[TEST-AGENT]` -> `[CODE-AGENT]` -> `[AUDIT-AGENT]`).
 - **Copy-Paste Prompt Format:** Every agent handoff MUST output a formatted block containing the exact prompt the user should copy and paste for the next role or step.
 - **Explicit Trigger Type Labeling:** Handoff prompts MUST explicitly state whether the prompt is:
-  - ⚡ **OpenSpec Slash Command:** Start with `/opsx-explore` by default when initiating a new project phase/step (or `/opsx-propose`, `/opsx-apply`, `/opsx-archive` when managing ongoing/archiving phases).
-  - 💬 **Plain Text Prompt:** Standard text prompt without slash commands for intermediate TDD roles (`[TEST-AGENT]`, `[CODE-AGENT]`, `[AUDIT-AGENT]`).
+  - ⚡ **OpenSpec Slash Command:** Start with `/opsx-explore` by default for new phases, `/opsx-propose` for spec creation, `/opsx-apply <change-name>` for `[TEST-AGENT]` and `[CODE-AGENT]` task execution, and `/opsx-archive` for completing phases.
+  - 💬 **Plain Text Prompt:** Standard text prompt without slash commands for read-only inspection roles (`[AUDIT-AGENT]`).
 - **Exploration First Policy:** When handing off to launch a NEW project phase, the generated handoff prompt MUST ALWAYS default to starting with `/opsx-explore` so `[ORCHESTRATOR-AGENT]` inspects `IDEAS.md`, architectural trade-offs, and user concepts BEFORE generating formal specs with `/opsx-propose`.
 - **OpenSpec Transition Lifecycle:**
   1. `/opsx-explore` (Orchestrator) → Discusses architecture/IDEAS.md. When aligned with user, Orchestrator outputs a handoff prompt starting with ⚡ `/opsx-propose`.
-  2. `/opsx-propose` (Orchestrator) → Creates OpenSpec change artifacts (`proposal.md`, `design.md`, `specs/`, `tasks.md`), then outputs a handoff prompt for 💬 `[TEST-AGENT]`.
-  3. `[TEST-AGENT]` → Writes RED failing tests, then outputs handoff prompt for 💬 `[CODE-AGENT]`.
-  4. `[CODE-AGENT]` → Writes GREEN implementation, then outputs handoff prompt for 💬 `[AUDIT-AGENT]`.
+  2. `/opsx-propose` (Orchestrator) → Creates OpenSpec change artifacts (`proposal.md`, `design.md`, `specs/`, `tasks.md`), then outputs a handoff prompt starting with ⚡ `/opsx-apply <change-name>` for `[TEST-AGENT]`.
+  3. ⚡ `/opsx-apply` (`[TEST-AGENT]`) → Loads OpenSpec tasks, writes RED failing tests (`*_test.go`), marks completed test tasks in `tasks.md`, then outputs a handoff prompt starting with ⚡ `/opsx-apply <change-name>` for `[CODE-AGENT]`.
+  4. ⚡ `/opsx-apply` (`[CODE-AGENT]`) → Loads OpenSpec tasks, writes GREEN implementation (`*.go`), marks completed impl tasks in `tasks.md`, then outputs a handoff prompt for 💬 `[AUDIT-AGENT]`.
   5. `[AUDIT-AGENT]` → Audits code/tests/docker. If 100% green, approves phase and outputs handoff prompt starting with ⚡ `/opsx-archive` for Orchestrator.
   6. `/opsx-archive` (Orchestrator) → Archives change to `openspec/changes/archive/`, syncs specs, updates `ROADMAP.md` checkboxes `- [x]`, and outputs handoff prompt starting with ⚡ `/opsx-explore` for the NEXT phase.
 
