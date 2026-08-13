@@ -23,3 +23,4 @@
 
 - [x] 5.1 Write TDD unit and integration tests for storage sharding, database queries, and streaming HTTP handlers.
 - [x] 5.2 Verify Docker Compose deployment (`docker compose up`) and execute full Go test suite (`go test ./...`).
+- [ ] 5.3 Expand test suite in `internal/handler`, `internal/storage`, and `internal/database` packages to achieve >= 85% statement coverage.
