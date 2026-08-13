@@ -11,12 +11,12 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Basic `GET /health` endpoint with TDD unit tests.
   - [x] `docker-compose.yml` mapped to custom host port `32214`.
 
-- [ ] **Phase 2: Database & File Storage Core**
-  - [ ] PostgreSQL 16 container in Docker Compose (`image: postgres:16-alpine`).
-  - [ ] Database schema: `users` (quotas), `files` (UUID, path, size, mime_type, sha256, expires_at).
-  - [ ] Binary file storage on disk with subfolder sharding (`/storage/f4/7a/<uuid>`).
-  - [ ] API endpoints: `POST /api/v1/files/upload`, `GET /api/v1/files/download/:id`, `GET /api/v1/files`.
-  - [ ] TDD unit & integration test suite.
+- [x] **Phase 2: Database & File Storage Core**
+  - [x] PostgreSQL 16 container in Docker Compose (`image: postgres:16-alpine`).
+  - [x] Database schema: `users` (quotas), `files` (UUID, path, size, mime_type, sha256, expires_at).
+  - [x] Binary file storage on disk with subfolder sharding (`/storage/f4/7a/<uuid>`).
+  - [x] API endpoints: `POST /api/v1/files/upload`, `GET /api/v1/files/download/:id`, `GET /api/v1/files`.
+  - [x] TDD unit & integration test suite.
 
 - [ ] **Phase 3: Authentication & Multi-Tenancy**
   - [ ] User accounts table and seeding initial admin user.
