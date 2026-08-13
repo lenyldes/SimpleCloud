@@ -34,3 +34,7 @@ go.work.sum
 .agent/
 .openspec/
 
+# Local ideas scratchpad
+IDEAS.md
+
+
