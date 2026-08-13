@@ -45,7 +45,8 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
   2. `/opsx-propose` (Orchestrator) → Creates OpenSpec change artifacts (`proposal.md`, `design.md`, `specs/`, `tasks.md`), then outputs a handoff prompt for 💬 `[TEST-AGENT]`.
   3. `[TEST-AGENT]` → Writes RED failing tests, then outputs handoff prompt for 💬 `[CODE-AGENT]`.
   4. `[CODE-AGENT]` → Writes GREEN implementation, then outputs handoff prompt for 💬 `[AUDIT-AGENT]`.
-  5. `[AUDIT-AGENT]` → Audits code/tests/docker. If 100% green, approves phase and outputs handoff prompt starting with ⚡ `/opsx-explore` for the NEXT phase.
+  5. `[AUDIT-AGENT]` → Audits code/tests/docker. If 100% green, approves phase and outputs handoff prompt starting with ⚡ `/opsx-archive` for Orchestrator.
+  6. `/opsx-archive` (Orchestrator) → Archives change to `openspec/changes/archive/`, syncs specs, updates `ROADMAP.md` checkboxes `- [x]`, and outputs handoff prompt starting with ⚡ `/opsx-explore` for the NEXT phase.
 
 ---
 
