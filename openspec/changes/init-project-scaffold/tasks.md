@@ -7,7 +7,7 @@
 
 - [x] 2.1 Initialize Go module under `services/storage-service/` (`go.mod`).
 - [x] 2.2 Write unit test `internal/handler/health_test.go` for `GET /health` endpoint following TDD.
-- [ ] 2.3 Implement `internal/handler/health.go` and `cmd/main.go` to make the test pass.
+- [x] 2.3 Implement `internal/handler/health.go` and `cmd/main.go` to make the test pass.
 
 ## 3. Docker Compose & Environment
 
