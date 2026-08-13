@@ -40,6 +40,12 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
   - ⚡ **OpenSpec Slash Command:** Start with `/opsx-explore` by default when initiating a new project phase/step (or `/opsx-propose`, `/opsx-apply`, `/opsx-archive` when managing ongoing/archiving phases).
   - 💬 **Plain Text Prompt:** Standard text prompt without slash commands for intermediate TDD roles (`[TEST-AGENT]`, `[CODE-AGENT]`, `[AUDIT-AGENT]`).
 - **Exploration First Policy:** When handing off to launch a NEW project phase, the generated handoff prompt MUST ALWAYS default to starting with `/opsx-explore` so `[ORCHESTRATOR-AGENT]` inspects `IDEAS.md`, architectural trade-offs, and user concepts BEFORE generating formal specs with `/opsx-propose`.
+- **OpenSpec Transition Lifecycle:**
+  1. `/opsx-explore` (Orchestrator) → Discusses architecture/IDEAS.md. When aligned with user, Orchestrator outputs a handoff prompt starting with ⚡ `/opsx-propose`.
+  2. `/opsx-propose` (Orchestrator) → Creates OpenSpec change artifacts (`proposal.md`, `design.md`, `specs/`, `tasks.md`), then outputs a handoff prompt for 💬 `[TEST-AGENT]`.
+  3. `[TEST-AGENT]` → Writes RED failing tests, then outputs handoff prompt for 💬 `[CODE-AGENT]`.
+  4. `[CODE-AGENT]` → Writes GREEN implementation, then outputs handoff prompt for 💬 `[AUDIT-AGENT]`.
+  5. `[AUDIT-AGENT]` → Audits code/tests/docker. If 100% green, approves phase and outputs handoff prompt starting with ⚡ `/opsx-explore` for the NEXT phase.
 
 ---
 
