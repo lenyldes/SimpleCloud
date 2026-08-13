@@ -28,7 +28,6 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 - **Workflow:** Runs tests (`go test ./...`), verifies code formatting (`gofmt`), tests Docker containers (`docker compose up`), inspects security constraints, and checks adherence to `AGENTS.md` directives and OpenSpec specifications.
 - **Permissions:** STRICT READ-ONLY INSPECTION. Strictly forbidden from creating, editing, refactoring, or modifying any project codebase files (`*.go`, `*_test.go`, `Dockerfile`, `docker-compose.yml`, etc.). Only outputs an audit report and the next copy-paste handoff prompt. If defects or compliance issues are found, flags them and outputs a prompt for `[CODE-AGENT]` or `[TEST-AGENT]` to resolve. If clean, approves and outputs prompt for archiving or next step.
 
-
 ### 4. Explicit Role Identification & Announcement Rule
 - **Role Declaration:** Every AI agent invoked MUST inspect the user prompt and `AGENTS.md` to determine its active role (`[ORCHESTRATOR-AGENT]`, `[TEST-AGENT]`, `[CODE-AGENT]`, or `[AUDIT-AGENT]`).
 - **First-Line Announcement:** The agent MUST announce its active role in the very first sentence of its response (e.g. `🎭 Действую в роли [ORCHESTRATOR-AGENT]` or `🧪 Действую в роли [TEST-AGENT]`).
@@ -37,9 +36,6 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 ### 5. Guided Prompt Handoff Protocol
 - **Strict Role Pause:** When an agent finishes its designated role task (e.g. `[TEST-AGENT]` finishes writing failing tests in RED state, or `[CODE-AGENT]` makes tests pass in GREEN state), it MUST NOT automatically switch roles. It MUST stop execution, commit its changes, update task status, and output a ready-to-use copy-paste prompt for the user to send to the next agent in sequence (`[ORCHESTRATOR-AGENT]` -> `[TEST-AGENT]` -> `[CODE-AGENT]` -> `[AUDIT-AGENT]`).
 - **Copy-Paste Prompt Format:** Every agent handoff MUST output a formatted block containing the exact prompt the user should copy and paste for the next role or step.
-
-
-
 
 ---
 
@@ -72,5 +68,3 @@ Avoid repeating the prefix action in the description sentence.
 - **Error Handling:** Explicit error checking. Never swallow or suppress errors.
 - **Imports:** Standard Go library imports grouped separately from third-party or internal packages.
 - **Proactive Documentation Maintenance:** Whenever project architecture, workflow rules, agent permissions, or conventions evolve, AI agents MUST automatically update `AGENTS.md` and `README.md` without needing explicit reminders from the user. When completing or archiving a project phase, AI agents MUST update the corresponding checkboxes `- [x]` in `ROADMAP.md`.
-
-
