@@ -19,9 +19,15 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 - **Permissions:** Strictly FORBIDDEN from editing, altering, disabling, commenting out, or deleting any `*_test.go` files.
 - **Protocol on Test Issues:** If a test appears invalid or buggy, `[CODE-AGENT]` MUST NOT fix the test itself. It must pause and request `[TEST-AGENT]` to review and adjust the test.
 
-### 3. Guided Prompt Handoff Protocol
-- **Strict Role Pause:** When an agent finishes its designated role task (e.g. `[TEST-AGENT]` finishes writing failing tests in RED state), it MUST NOT automatically switch roles and write production code. It MUST stop execution, commit its changes, update task status, and output a ready-to-use copy-paste prompt for the user to send to the next agent (`[CODE-AGENT]`).
+### 3. Audit & Verification Agent (`[AUDIT-AGENT]`)
+- **Responsibility:** Performs independent quality, security, performance, and compliance checks on completed features.
+- **Workflow:** Runs tests (`go test ./...`), verifies code formatting (`gofmt`), tests Docker containers (`docker compose up`), inspects security constraints, and checks adherence to `AGENTS.md` directives and OpenSpec specifications.
+- **Permissions:** Read-only inspection and verification. Does NOT write new feature code. If defects or compliance issues are found, flags them and outputs a prompt for `[CODE-AGENT]` or `[TEST-AGENT]` to resolve. If clean, approves and outputs prompt for archiving or next step.
+
+### 4. Guided Prompt Handoff Protocol
+- **Strict Role Pause:** When an agent finishes its designated role task (e.g. `[TEST-AGENT]` finishes writing failing tests in RED state, or `[CODE-AGENT]` makes tests pass in GREEN state), it MUST NOT automatically switch roles. It MUST stop execution, commit its changes, update task status, and output a ready-to-use copy-paste prompt for the user to send to the next agent in sequence (`[TEST-AGENT]` -> `[CODE-AGENT]` -> `[AUDIT-AGENT]`).
 - **Copy-Paste Prompt Format:** Every agent handoff MUST output a formatted block containing the exact prompt the user should copy and paste for the next role or step.
+
 
 
 ---
