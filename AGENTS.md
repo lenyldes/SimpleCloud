@@ -26,7 +26,8 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 ### 3. Audit & Verification Agent (`[AUDIT-AGENT]`)
 - **Responsibility:** Performs independent quality, security, performance, and compliance checks on completed features.
 - **Workflow:** Runs tests (`go test ./...`), verifies code formatting (`gofmt`), tests Docker containers (`docker compose up`), inspects security constraints, and checks adherence to `AGENTS.md` directives and OpenSpec specifications.
-- **Permissions:** Read-only inspection and verification. Does NOT write new feature code. If defects or compliance issues are found, flags them and outputs a prompt for `[CODE-AGENT]` or `[TEST-AGENT]` to resolve. If clean, approves and outputs prompt for archiving or next step.
+- **Permissions:** STRICT READ-ONLY INSPECTION. Strictly forbidden from creating, editing, refactoring, or modifying any project codebase files (`*.go`, `*_test.go`, `Dockerfile`, `docker-compose.yml`, etc.). Only outputs an audit report and the next copy-paste handoff prompt. If defects or compliance issues are found, flags them and outputs a prompt for `[CODE-AGENT]` or `[TEST-AGENT]` to resolve. If clean, approves and outputs prompt for archiving or next step.
+
 
 ### 4. Explicit Role Identification & Announcement Rule
 - **Role Declaration:** Every AI agent invoked MUST inspect the user prompt and `AGENTS.md` to determine its active role (`[ORCHESTRATOR-AGENT]`, `[TEST-AGENT]`, `[CODE-AGENT]`, or `[AUDIT-AGENT]`).
