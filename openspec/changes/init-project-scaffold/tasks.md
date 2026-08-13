@@ -5,7 +5,7 @@
 
 ## 2. Storage Service Scaffold & TDD Tests
 
-- [ ] 2.1 Initialize Go module under `services/storage-service/` (`go.mod`).
+- [x] 2.1 Initialize Go module under `services/storage-service/` (`go.mod`).
 - [ ] 2.2 Write unit test `internal/handler/health_test.go` for `GET /health` endpoint following TDD.
 - [ ] 2.3 Implement `internal/handler/health.go` and `cmd/main.go` to make the test pass.
 
