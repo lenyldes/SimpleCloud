@@ -19,6 +19,11 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 - **Permissions:** Strictly FORBIDDEN from editing, altering, disabling, commenting out, or deleting any `*_test.go` files.
 - **Protocol on Test Issues:** If a test appears invalid or buggy, `[CODE-AGENT]` MUST NOT fix the test itself. It must pause and request `[TEST-AGENT]` to review and adjust the test.
 
+### 3. Guided Prompt Handoff Protocol
+- **Strict Role Pause:** When an agent finishes its designated role task (e.g. `[TEST-AGENT]` finishes writing failing tests in RED state), it MUST NOT automatically switch roles and write production code. It MUST stop execution, commit its changes, update task status, and output a ready-to-use copy-paste prompt for the user to send to the next agent (`[CODE-AGENT]`).
+- **Copy-Paste Prompt Format:** Every agent handoff MUST output a formatted block containing the exact prompt the user should copy and paste for the next role or step.
+
+
 ---
 
 ## Git Commit Format & Rules
