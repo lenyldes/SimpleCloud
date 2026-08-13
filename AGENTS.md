@@ -10,7 +10,7 @@ SimpleCloud is a lightweight, super-fast, self-hosted cloud storage web applicat
 All AI agents working on this codebase MUST strictly adhere to Test-Driven Development (TDD) role separation:
 
 ### 0. Orchestrator Agent (`[ORCHESTRATOR-AGENT]`)
-- **Responsibility:** High-level system architecture, user exploration (`/opsx-explore`), creating OpenSpec changes (`/opsx-propose`), updating `ROADMAP.md`, archiving completed phases (`/opsx-archive`), and generating exact handoff prompts for the test, code, and audit agents.
+- **Responsibility:** High-level system architecture, user exploration (`/opsx-explore`), inspecting `IDEAS.md` for user notes/concepts prior to planning, creating OpenSpec changes (`/opsx-propose`), updating `ROADMAP.md`, archiving completed phases (`/opsx-archive`), and generating exact handoff prompts for the test, code, and audit agents.
 - **Permissions:** Manages documentation, architecture artifacts, and OpenSpec proposals. Does NOT write production implementation code or unit tests directly.
 
 ### 1. Test Agent (`[TEST-AGENT]`)
@@ -68,3 +68,4 @@ Avoid repeating the prefix action in the description sentence.
 - **Error Handling:** Explicit error checking. Never swallow or suppress errors.
 - **Imports:** Standard Go library imports grouped separately from third-party or internal packages.
 - **Proactive Documentation Maintenance:** Whenever project architecture, workflow rules, agent permissions, or conventions evolve, AI agents MUST automatically update `AGENTS.md` and `README.md` without needing explicit reminders from the user. When completing or archiving a project phase, AI agents MUST update the corresponding checkboxes `- [x]` in `ROADMAP.md`.
+- **Ideas & Backlog Inspection:** Before proposing or exploring new changes (`/opsx-explore`, `/opsx-propose`), `[ORCHESTRATOR-AGENT]` MUST inspect `IDEAS.md` to incorporate user thoughts, notes, and feature concepts into OpenSpec proposals.
