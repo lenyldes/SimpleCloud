@@ -37,4 +37,6 @@ go.work.sum
 # Local ideas scratchpad
 IDEAS.md
 
-
+# Local runtime data & storage
+data/
+storage/
