@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: simplecloud-postgres
+    environment:
+      POSTGRES_DB: simplecloud
+      POSTGRES_USER: simplecloud_user
+      POSTGRES_PASSWORD: simplecloud_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U simplecloud_user -d simplecloud"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   storage-service:
     build:
       context: ./services/storage-service
@@ -8,4 +26,20 @@ services:
       - "32214:8080"
     environment:
       - PORT=8080
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=simplecloud
+      - POSTGRES_USER=simplecloud_user
+      - POSTGRES_PASSWORD=simplecloud_dev_password
+      - STORAGE_DIR=/storage
+      - DEFAULT_USER_QUOTA_BYTES=5368709120
+    volumes:
+      - ./data/storage:/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres_data:
+
