@@ -9,6 +9,10 @@ SimpleCloud is a lightweight, super-fast, self-hosted cloud storage web applicat
 
 All AI agents working on this codebase MUST strictly adhere to Test-Driven Development (TDD) role separation:
 
+### 0. Orchestrator Agent (`[ORCHESTRATOR-AGENT]`)
+- **Responsibility:** High-level system architecture, user exploration (`/opsx-explore`), creating OpenSpec changes (`/opsx-propose`), updating `ROADMAP.md`, archiving completed phases (`/opsx-archive`), and generating exact handoff prompts for the test, code, and audit agents.
+- **Permissions:** Manages documentation, architecture artifacts, and OpenSpec proposals. Does NOT write production implementation code or unit tests directly.
+
 ### 1. Test Agent (`[TEST-AGENT]`)
 - **Responsibility:** Writes and updates unit & integration tests (`*_test.go`) based on OpenSpec requirements.
 - **Workflow:** Writes failing tests first (**RED** state) before any feature implementation code is written.
@@ -24,9 +28,15 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 - **Workflow:** Runs tests (`go test ./...`), verifies code formatting (`gofmt`), tests Docker containers (`docker compose up`), inspects security constraints, and checks adherence to `AGENTS.md` directives and OpenSpec specifications.
 - **Permissions:** Read-only inspection and verification. Does NOT write new feature code. If defects or compliance issues are found, flags them and outputs a prompt for `[CODE-AGENT]` or `[TEST-AGENT]` to resolve. If clean, approves and outputs prompt for archiving or next step.
 
-### 4. Guided Prompt Handoff Protocol
-- **Strict Role Pause:** When an agent finishes its designated role task (e.g. `[TEST-AGENT]` finishes writing failing tests in RED state, or `[CODE-AGENT]` makes tests pass in GREEN state), it MUST NOT automatically switch roles. It MUST stop execution, commit its changes, update task status, and output a ready-to-use copy-paste prompt for the user to send to the next agent in sequence (`[TEST-AGENT]` -> `[CODE-AGENT]` -> `[AUDIT-AGENT]`).
+### 4. Explicit Role Identification & Announcement Rule
+- **Role Declaration:** Every AI agent invoked MUST inspect the user prompt and `AGENTS.md` to determine its active role (`[ORCHESTRATOR-AGENT]`, `[TEST-AGENT]`, `[CODE-AGENT]`, or `[AUDIT-AGENT]`).
+- **First-Line Announcement:** The agent MUST announce its active role in the very first sentence of its response (e.g. `🎭 Действую в роли [ORCHESTRATOR-AGENT]` or `🧪 Действую в роли [TEST-AGENT]`).
+- **Strict Boundary Enforcement:** The agent MUST NOT perform actions outside its assigned role permissions.
+
+### 5. Guided Prompt Handoff Protocol
+- **Strict Role Pause:** When an agent finishes its designated role task (e.g. `[TEST-AGENT]` finishes writing failing tests in RED state, or `[CODE-AGENT]` makes tests pass in GREEN state), it MUST NOT automatically switch roles. It MUST stop execution, commit its changes, update task status, and output a ready-to-use copy-paste prompt for the user to send to the next agent in sequence (`[ORCHESTRATOR-AGENT]` -> `[TEST-AGENT]` -> `[CODE-AGENT]` -> `[AUDIT-AGENT]`).
 - **Copy-Paste Prompt Format:** Every agent handoff MUST output a formatted block containing the exact prompt the user should copy and paste for the next role or step.
+
 
 
 
