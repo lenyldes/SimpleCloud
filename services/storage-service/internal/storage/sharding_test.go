@@ -121,3 +121,76 @@ func TestDiskStorageEngine_SaveAndQuota(t *testing.T) {
 		}
 	})
 }
+
+type errReader struct{}
+
+func (e *errReader) Read(p []byte) (n int, err error) {
+	return 0, errors.New("simulated read failure")
+}
+
+func TestDiskStorageEngine_Save_ErrorPaths(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "storage_err_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine := storage.NewDiskEngine(tempDir)
+
+	t.Run("Invalid file ID returns error", func(t *testing.T) {
+		_, _, err := engine.Save("f4", bytes.NewReader([]byte("data")), 1000)
+		if err == nil {
+			t.Error("expected error for short file ID, got nil")
+		}
+	})
+
+	t.Run("Read error during streaming", func(t *testing.T) {
+		fileID := "a1b2c3d4-1234-5678-9abc-def012345678"
+		_, _, err := engine.Save(fileID, &errReader{}, 1000)
+		if err == nil {
+			t.Error("expected read error, got nil")
+		}
+	})
+}
+
+func TestDiskStorageEngine_GetFilePath(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "storage_get_path_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine := storage.NewDiskEngine(tempDir)
+
+	t.Run("Invalid file ID", func(t *testing.T) {
+		_, err := engine.GetFilePath("ab")
+		if !errors.Is(err, storage.ErrInvalidFileID) {
+			t.Errorf("expected ErrInvalidFileID, got %v", err)
+		}
+	})
+
+	t.Run("Non-existent file", func(t *testing.T) {
+		_, err := engine.GetFilePath("12345678-1234-5678-9abc-def012345678")
+		if err == nil {
+			t.Error("expected error for non-existent file, got nil")
+		}
+	})
+
+	t.Run("Existing file", func(t *testing.T) {
+		fileID := "e1e2e3e4-1234-5678-9abc-def012345678"
+		content := []byte("existing file data")
+		_, _, err := engine.Save(fileID, bytes.NewReader(content), 1000)
+		if err != nil {
+			t.Fatalf("failed to save file: %v", err)
+		}
+
+		path, err := engine.GetFilePath(fileID)
+		if err != nil {
+			t.Fatalf("expected path, got error: %v", err)
+		}
+
+		if path == "" {
+			t.Error("expected non-empty path")
+		}
+	})
+}

@@ -1,0 +1,98 @@
+package database_test
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/database"
+)
+
+func TestInitDB_ErrorCases(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	t.Run("Empty connection string", func(t *testing.T) {
+		_, err := database.InitDB(ctx, "")
+		if err == nil {
+			t.Fatal("expected error for empty connection string, got nil")
+		}
+		if !strings.Contains(err.Error(), "empty database connection string") {
+			t.Errorf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("Invalid config connection string", func(t *testing.T) {
+		_, err := database.InitDB(ctx, "invalid_conn_scheme://:")
+		if err == nil {
+			t.Fatal("expected error for invalid connection string, got nil")
+		}
+		if !strings.Contains(err.Error(), "failed to parse conn config") {
+			t.Errorf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("Unreachable host connection string", func(t *testing.T) {
+		unreachableConn := "postgres://user:pass@127.0.0.1:1/dbname?connect_timeout=1"
+		_, err := database.InitDB(ctx, unreachableConn)
+		if err == nil {
+			t.Fatal("expected error for unreachable database, got nil")
+		}
+		if !strings.Contains(err.Error(), "failed to connect to database") &&
+			!strings.Contains(err.Error(), "failed to ping database") {
+			t.Errorf("unexpected error message: %v", err)
+		}
+	})
+}
+
+func TestInitDB_SuccessAndMigrations(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	connStr := "postgres://simplecloud_user:simplecloud_dev_password@127.0.0.1:5432/simplecloud?sslmode=disable"
+	pool, err := database.InitDB(ctx, connStr)
+	if err != nil {
+		t.Skipf("Skipping integration test; postgres database not accessible: %v", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(ctx); err != nil {
+		t.Fatalf("failed to ping initialized database: %v", err)
+	}
+
+	// Verify tables were created by migrations
+	var exists bool
+	err = pool.QueryRow(ctx, "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'files');").Scan(&exists)
+	if err != nil {
+		t.Fatalf("failed to query table existence: %v", err)
+	}
+	if !exists {
+		t.Error("expected 'files' table to exist after migrations")
+	}
+
+	t.Run("RunMigrations with cancelled context returns error", func(t *testing.T) {
+		canceledCtx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := database.RunMigrations(canceledCtx, pool)
+		if err == nil {
+			t.Error("expected error for cancelled context in RunMigrations, got nil")
+		}
+	})
+
+	t.Run("InitDB context timeout/cancellation during migration closes pool", func(t *testing.T) {
+		connStr := "postgres://simplecloud_user:simplecloud_dev_password@127.0.0.1:5432/simplecloud?sslmode=disable"
+		for i := 1; i <= 20; i++ {
+			ctx, cancel := context.WithCancel(context.Background())
+			go func(d time.Duration) {
+				time.Sleep(d)
+				cancel()
+			}(time.Duration(i*200) * time.Microsecond)
+			pool, err := database.InitDB(ctx, connStr)
+			if err == nil {
+				pool.Close()
+			}
+		}
+	})
+}

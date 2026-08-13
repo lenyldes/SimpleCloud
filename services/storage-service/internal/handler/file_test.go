@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/handler"
@@ -207,5 +208,161 @@ func TestFileListHandler_Success(t *testing.T) {
 	var files []map[string]any
 	if err := json.NewDecoder(rr.Body).Decode(&files); err != nil {
 		t.Fatalf("failed to decode JSON list: %v", err)
+	}
+}
+
+func TestFileHandler_InvalidMethodsAndInputs(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "file_handler_err_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine := storage.NewDiskEngine(tempDir)
+	fileHandler := handler.NewFileHandler(engine, 1024*1024)
+
+	t.Run("UploadHandler method not allowed", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/upload", nil)
+		rr := httptest.NewRecorder()
+		fileHandler.UploadHandler(rr, req)
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected 405, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler invalid multipart form", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", strings.NewReader("not a multipart body"))
+		req.Header.Set("Content-Type", "multipart/form-data; boundary=invalid")
+		rr := httptest.NewRecorder()
+		fileHandler.UploadHandler(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler missing file field", func(t *testing.T) {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		_ = writer.WriteField("other", "value")
+		_ = writer.Close()
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		rr := httptest.NewRecorder()
+		fileHandler.UploadHandler(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DownloadHandler method not allowed", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/download/1234", nil)
+		rr := httptest.NewRecorder()
+		fileHandler.DownloadHandler(rr, req)
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected 405, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DownloadHandler missing file ID", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/download/", nil)
+		rr := httptest.NewRecorder()
+		fileHandler.DownloadHandler(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("ListHandler method not allowed", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files", nil)
+		rr := httptest.NewRecorder()
+		fileHandler.ListHandler(rr, req)
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected 405, got %d", rr.Code)
+		}
+	})
+}
+
+func TestFileDownloadHandler_WithMetadata(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "file_handler_meta_dl_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine := storage.NewDiskEngine(tempDir)
+	fileHandler := handler.NewFileHandler(engine, 1024*1024)
+
+	// First upload a file to populate metadata in fileHandler
+	content := []byte("Metadata attachment download test")
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "document.pdf")
+	_, _ = part.Write(content)
+	_ = writer.Close()
+
+	uploadReq, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	uploadRR := httptest.NewRecorder()
+	fileHandler.UploadHandler(uploadRR, uploadReq)
+
+	if uploadRR.Code != http.StatusCreated {
+		t.Fatalf("upload failed: %d", uploadRR.Code)
+	}
+
+	var meta handler.FileMetadata
+	if err := json.NewDecoder(uploadRR.Body).Decode(&meta); err != nil {
+		t.Fatalf("failed to decode upload response: %v", err)
+	}
+
+	// Now download the uploaded file
+	dlReq, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/files/download/%s", meta.ID), nil)
+	dlRR := httptest.NewRecorder()
+	fileHandler.DownloadHandler(dlRR, dlReq)
+
+	if dlRR.Code != http.StatusOK {
+		t.Fatalf("download failed: %d", dlRR.Code)
+	}
+
+	disposition := dlRR.Header().Get("Content-Disposition")
+	if !strings.Contains(disposition, "document.pdf") {
+		t.Errorf("expected Content-Disposition to contain 'document.pdf', got %q", disposition)
+	}
+
+	// Also verify ListHandler returns this item
+	listReq, _ := http.NewRequest(http.MethodGet, "/api/v1/files", nil)
+	listRR := httptest.NewRecorder()
+	fileHandler.ListHandler(listRR, listReq)
+
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("list failed: %d", listRR.Code)
+	}
+
+	var list []handler.FileMetadata
+	if err := json.NewDecoder(listRR.Body).Decode(&list); err != nil {
+		t.Fatalf("failed to decode list response: %v", err)
+	}
+	if len(list) != 1 {
+		t.Errorf("expected 1 file in list, got %d", len(list))
+	}
+}
+
+func TestFileUploadHandler_SaveError500(t *testing.T) {
+	unwritableEngine := storage.NewDiskEngine("/dev/null/invalid_path")
+	unwritableHandler := handler.NewFileHandler(unwritableEngine, 1024*1024)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "test.txt")
+	_, _ = part.Write([]byte("data"))
+	_ = writer.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rr := httptest.NewRecorder()
+	unwritableHandler.UploadHandler(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 Internal Server Error, got %d", rr.Code)
 	}
 }
