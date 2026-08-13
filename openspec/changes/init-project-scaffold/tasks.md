@@ -1,7 +1,7 @@
 ## 1. Documentation & Agent Rules
 
 - [x] 1.1 Create `AGENTS.md` with strict TDD roles, permissions, commit message format rules (`ADD:`, `UPD:`, `FIX:`, `RM:`, `DOC:`), and no tautology rule.
-- [ ] 1.2 Create `ROADMAP.md` documenting the complete 6-phase development roadmap.
+- [x] 1.2 Create `ROADMAP.md` documenting the complete 6-phase development roadmap.
 
 ## 2. Storage Service Scaffold & TDD Tests
 
