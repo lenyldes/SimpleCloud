@@ -45,6 +45,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Frontend sidebar quota progress indicator & status threshold colors.
 
 - [ ] **Phase 7: Manual User Testing, Bugfixing & Product Polish**
+  - [ ] Security & Stability Audit Fixes: implement remediations from [`BUGS.md`](BUGS.md) (audit of 2026-08-14: 5 critical, 5 high, 8 medium findings — fix in the priority order listed in the report).
   - [ ] Guided User Manual Testing Protocol: `[ORCHESTRATOR-AGENT]` provides interactive step-by-step test instructions and report template for user feedback.
   - [ ] User Bug Triage & Resolution: Implement targeted fixes for all user-reported UI/UX issues and edge cases.
   - [ ] Final v1.0 Release Verification: End-to-end audit and release build ready for production use.
