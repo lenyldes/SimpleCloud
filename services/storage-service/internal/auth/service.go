@@ -92,8 +92,10 @@ func SeedAdminUser(ctx context.Context, pool *pgxpool.Pool, adminEmail, adminPas
 	_, err = pool.Exec(ctx, `
 		INSERT INTO users (id, email, password_hash, quota_bytes, used_bytes, role, is_active)
 		VALUES ($1, $2, $3, $4, 0, 'admin', true)
-		ON CONFLICT (email) DO UPDATE SET
+		ON CONFLICT (id) DO UPDATE SET
+			email = EXCLUDED.email,
 			password_hash = EXCLUDED.password_hash,
+			quota_bytes = EXCLUDED.quota_bytes,
 			role = EXCLUDED.role,
 			is_active = EXCLUDED.is_active
 	`, adminID, adminEmail, hashedPassword, quotaBytes)
