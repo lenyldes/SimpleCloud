@@ -34,13 +34,13 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Auto-deployment workflow (`deploy.yml`): SSH auto-deployment to remote VPS upon merging into `main`.
   - [x] Caddy reverse proxy integration (`test-cloud.lenyldes.ru` -> `localhost:32214`) with automatic Let's Encrypt HTTPS certificates.
 
-- [ ] **Phase 6: Advanced Features (Core & Navigation)**
-  - [ ] Frontend Login & Auth Modal UI (automatic modal on 401 Unauthorized).
-  - [ ] Nested folder hierarchy navigation & path-based file browsing (`folders` DB table, CRUD API, breadcrumbs).
-  - [ ] Storage quota enforcement per user (Backend 413 check & Frontend quota usage indicator).
-  - [ ] Automated session expiration worker (Background Go ticker for cleaning expired `user_sessions`).
-  - [ ] Changelog API endpoint (`/api/v1/sync/changes`) for future desktop/mobile sync clients.
-  - [ ] Custom SVG icons and refined UI design.
+- [x] **Phase 6: Advanced Features (Core & Navigation)**
+  - [x] Frontend Login & Auth Modal UI (automatic modal on 401 Unauthorized).
+  - [x] Nested folder hierarchy navigation & path-based file browsing (`folders` DB table, CRUD API, breadcrumbs).
+  - [x] Storage quota enforcement per user (Backend 413 check & Frontend quota usage indicator).
+  - [x] Automated session expiration worker (Background Go ticker for cleaning expired `user_sessions`).
+  - [x] Changelog API endpoint (`/api/v1/sync/changes`) for future desktop/mobile sync clients.
+  - [x] Custom SVG icons and refined UI design.
 
 - [ ] **Phase 7: Manual User Testing, Bugfixing & Product Polish**
   - [ ] Guided User Manual Testing Protocol: `[ORCHESTRATOR-AGENT]` provides interactive step-by-step test instructions and report template for user feedback.
