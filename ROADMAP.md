@@ -29,10 +29,10 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Drag-and-Drop file & folder upload interface.
   - [x] File preview (text, images, video) and download capabilities.
 
-- [ ] **Phase 5: CI/CD & Deployment**
-  - [ ] GitHub Actions workflow (`ci.yml`): Go linting (`golangci-lint`) and TDD automated test execution on PRs.
-  - [ ] Auto-deployment workflow (`deploy.yml`): SSH auto-deployment to remote VPS upon merging into `main`.
-  - [ ] Caddy reverse proxy integration (`test-cloud.lenyldes.ru` -> `localhost:32214`) with automatic Let's Encrypt HTTPS certificates.
+- [x] **Phase 5: CI/CD & Deployment**
+  - [x] GitHub Actions workflow (`ci.yml`): Go linting (`golangci-lint`) and TDD automated test execution on PRs.
+  - [x] Auto-deployment workflow (`deploy.yml`): SSH auto-deployment to remote VPS upon merging into `main`.
+  - [x] Caddy reverse proxy integration (`test-cloud.lenyldes.ru` -> `localhost:32214`) with automatic Let's Encrypt HTTPS certificates.
 
 - [ ] **Phase 6: Advanced Features**
   - [ ] Frontend Login & Auth Modal UI (automatic modal on 401 Unauthorized).
