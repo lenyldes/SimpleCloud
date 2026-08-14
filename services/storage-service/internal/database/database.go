@@ -4,6 +4,8 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/url"
@@ -59,19 +61,19 @@ func InitDB(ctx context.Context, connString string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// RunMigrations executes embedded SQL scripts against the database with version tracking.
-func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
+// RunMigrationsFS executes SQL scripts from fsys against the database with version tracking.
+func RunMigrationsFS(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS) error {
+	entries, err := fs.ReadDir(fsys, "migrations")
+	if err != nil {
+		return fmt.Errorf("failed to read migrations dir: %w", err)
+	}
+
 	bootstrapSQL := `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version TEXT PRIMARY KEY,
 		applied_at TIMESTAMPTZ DEFAULT now()
 	);`
 	if _, err := pool.Exec(ctx, bootstrapSQL); err != nil {
 		return fmt.Errorf("failed to execute migration bootstrap: %w", err)
-	}
-
-	entries, err := migrationFS.ReadDir("migrations")
-	if err != nil {
-		return fmt.Errorf("failed to read migrations dir: %w", err)
 	}
 
 	for _, entry := range entries {
@@ -98,7 +100,13 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			continue
 		}
 
-		sqlContent, err := migrationFS.ReadFile("migrations/" + version)
+		file, err := fsys.Open("migrations/" + version)
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("failed to read migration file %s: %w", version, err)
+		}
+		sqlContent, err := io.ReadAll(file)
+		_ = file.Close()
 		if err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("failed to read migration file %s: %w", version, err)
@@ -121,4 +129,9 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	return nil
+}
+
+// RunMigrations executes embedded SQL scripts against the database with version tracking.
+func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
+	return RunMigrationsFS(ctx, pool, migrationFS)
 }
