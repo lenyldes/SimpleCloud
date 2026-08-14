@@ -24,8 +24,10 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 - **Protocol on Test Issues:** If a test appears invalid or buggy, `[CODE-AGENT]` MUST NOT fix the test itself. It must pause and request `[TEST-AGENT]` to review and adjust the test.
 
 ### 3. Audit & Verification Agent (`[AUDIT-AGENT]`)
-- **Responsibility:** Performs independent quality, security, performance, and compliance checks on completed features.
-- **Workflow:** Runs tests (`go test ./...`), verifies code formatting (`gofmt`), tests Docker containers (`docker compose up`), inspects security constraints, and checks adherence to `AGENTS.md` directives and OpenSpec specifications.
+- **Responsibility:** Performs independent quality, code review, security, performance, and compliance checks on completed features.
+- **Workflow:** 
+  1. **Mandatory Deep Code Review:** Reads all modified/created `*.go` and `*_test.go` files (using `view_file` or inspecting `git diff`) to evaluate code quality, readability, security, error handling, absence of anti-patterns ("говнокод"), and meaningfulness of test assertions.
+  2. **Automated Verification:** Runs tests (`go test -cover ./...`), verifies code formatting (`gofmt`), tests Docker containers (`docker compose up`), inspects security constraints, and checks adherence to `AGENTS.md` directives and OpenSpec specifications.
 - **Permissions:** STRICT READ-ONLY INSPECTION. Strictly forbidden from creating, editing, refactoring, or modifying any project codebase files (`*.go`, `*_test.go`, `Dockerfile`, `docker-compose.yml`, etc.). Only outputs an audit report and the next copy-paste handoff prompt. If defects or compliance issues are found, flags them and outputs a prompt for `[CODE-AGENT]` or `[TEST-AGENT]` to resolve. If clean, approves and outputs prompt for archiving or next step.
 
 ### 4. Explicit Role Identification & Announcement Rule
@@ -40,12 +42,13 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
   - ⚡ **OpenSpec Slash Command:** Start with `/openspec-explore` by default for new phases, `/openspec-propose` for spec creation, `/openspec-apply-change <change-name>` for `[TEST-AGENT]` and `[CODE-AGENT]` task execution, and `/openspec-archive-change` for completing phases.
   - 💬 **Plain Text Prompt:** Standard text prompt without slash commands for read-only inspection roles (`[AUDIT-AGENT]`).
 - **Exploration First Policy:** When handing off to launch a NEW project phase, the generated handoff prompt MUST ALWAYS default to starting with `/openspec-explore` so `[ORCHESTRATOR-AGENT]` inspects `IDEAS.md`, architectural trade-offs, and user concepts BEFORE generating formal specs with `/openspec-propose`.
+- **Detailed Audit Handoff Requirement:** When `[CODE-AGENT]` generates a handoff prompt for `[AUDIT-AGENT]`, the prompt MUST explicitly direct `[AUDIT-AGENT]` to read all changed `*.go` and `*_test.go` files, evaluate code cleanliness, error handling, and test assertion quality, in addition to running automated `go test` and `gofmt` commands.
 - **OpenSpec Transition Lifecycle:**
   1. `/openspec-explore` (Orchestrator) → Discusses architecture/IDEAS.md. When aligned with user, Orchestrator outputs a handoff prompt starting with ⚡ `/openspec-propose`.
   2. `/openspec-propose` (Orchestrator) → Creates OpenSpec change artifacts (`proposal.md`, `design.md`, `specs/`, `tasks.md`), then outputs a handoff prompt starting with ⚡ `/openspec-apply-change <change-name>` for `[TEST-AGENT]`.
   3. ⚡ `/openspec-apply-change` (`[TEST-AGENT]`) → Loads OpenSpec tasks, writes RED failing tests (`*_test.go`), marks completed test tasks in `tasks.md`, then outputs a handoff prompt starting with ⚡ `/openspec-apply-change <change-name>` for `[CODE-AGENT]`.
-  4. ⚡ `/openspec-apply-change` (`[CODE-AGENT]`) → Loads OpenSpec tasks, writes GREEN implementation (`*.go`), marks completed impl tasks in `tasks.md`, then outputs a handoff prompt for 💬 `[AUDIT-AGENT]`.
-  5. `[AUDIT-AGENT]` → Audits code/tests/docker. If 100% green, approves phase and outputs handoff prompt starting with ⚡ `/openspec-archive-change` for Orchestrator.
+  4. ⚡ `/openspec-apply-change` (`[CODE-AGENT]`) → Loads OpenSpec tasks, writes GREEN implementation (`*.go`), marks completed impl tasks in `tasks.md`, then outputs a detailed audit handoff prompt for 💬 `[AUDIT-AGENT]`.
+  5. `[AUDIT-AGENT]` → Performs deep code review (reading `*.go` and `*_test.go`), verifies code cleanliness, security, test assertions, and runs `go test -cover ./...` & `gofmt`. If 100% green, approves phase and outputs handoff prompt starting with ⚡ `/openspec-archive-change` for Orchestrator.
   6. `/openspec-archive-change` (Orchestrator) → Archives change to `openspec/changes/archive/`, syncs specs, updates `ROADMAP.md` checkboxes `- [x]`, and outputs handoff prompt starting with ⚡ `/openspec-explore` for the NEXT phase.
 
 ---
