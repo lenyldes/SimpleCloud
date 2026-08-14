@@ -71,7 +71,7 @@ func TestWebFrontendHTMLStructure(t *testing.T) {
 	content := string(contentBytes)
 
 	requiredElements := []struct {
-		name string
+		name  string
 		token string
 	}{
 		{"Header container", `id="app-header"`},

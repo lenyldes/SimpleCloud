@@ -174,4 +174,3 @@ func TestDBAuthService_CleanupExpiredSessions(t *testing.T) {
 		t.Errorf("expected valid session to remain in DB, but found %d rows", count)
 	}
 }
-

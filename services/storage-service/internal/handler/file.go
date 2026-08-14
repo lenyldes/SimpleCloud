@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 type FileMetadata struct {
 	ID        string    `json:"id"`
 	UserID    string    `json:"user_id,omitempty"`
+	FolderID  *string   `json:"folder_id,omitempty"`
 	Filename  string    `json:"filename"`
 	Size      int64     `json:"size"`
 	SHA256    string    `json:"sha256"`
@@ -61,6 +63,17 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Header.Get("Content-Length") != "" {
+		if contentLength, err := strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64); err == nil {
+			if contentLength > fh.defaultQuota {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Storage quota exceeded"})
+				return
+			}
+		}
+	}
+
 	// Limit multipart header reading to 32MB
 	err := r.ParseMultipartForm(32 << 20)
 	if err != nil {
@@ -68,6 +81,12 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid multipart form"})
 		return
+	}
+
+	folderIDVal := r.FormValue("folder_id")
+	var folderIDPtr *string
+	if folderIDVal != "" {
+		folderIDPtr = &folderIDVal
 	}
 
 	file, header, err := r.FormFile("file")
@@ -103,6 +122,7 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	meta := FileMetadata{
 		ID:        fileID,
 		UserID:    userID.String(),
+		FolderID:  folderIDPtr,
 		Filename:  header.Filename,
 		Size:      size,
 		SHA256:    sha256Hex,
@@ -206,11 +226,29 @@ func (fh *FileHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hasFolderID := r.URL.Query().Has("folder_id")
+	targetFolderID := r.URL.Query().Get("folder_id")
+
 	fh.mu.RLock()
 	list := make([]FileMetadata, 0)
 	for _, meta := range fh.files {
-		if meta.UserID == "" || meta.UserID == userID.String() {
-			list = append(list, meta)
+		if meta.UserID != "" && meta.UserID != userID.String() {
+			continue
+		}
+		if hasFolderID {
+			if targetFolderID == "" {
+				if meta.FolderID == nil || *meta.FolderID == "" {
+					list = append(list, meta)
+				}
+			} else {
+				if meta.FolderID != nil && *meta.FolderID == targetFolderID {
+					list = append(list, meta)
+				}
+			}
+		} else {
+			if meta.FolderID == nil || *meta.FolderID == "" {
+				list = append(list, meta)
+			}
 		}
 	}
 	fh.mu.RUnlock()

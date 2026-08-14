@@ -65,7 +65,9 @@ func main() {
 				log.Println("Admin user successfully seeded.")
 			}
 
-			authSvc = auth.NewDBAuthService(dbPool, 24*time.Hour)
+			dbAuth := auth.NewDBAuthService(dbPool, 24*time.Hour)
+			dbAuth.StartCleanupWorker(context.Background(), 1*time.Minute)
+			authSvc = dbAuth
 		}
 	} else {
 		authSvc = auth.NewMockAuthService()
@@ -74,6 +76,7 @@ func main() {
 	authHandler := auth.NewAuthHandler(authSvc)
 	engine := storage.NewDiskEngine(storageDir)
 	fileHandler := handler.NewFileHandler(engine, quotaBytes)
+	folderHandler := handler.NewFolderHandler(engine)
 
 	requireAuth := auth.RequireAuth(authSvc)
 
@@ -85,6 +88,17 @@ func main() {
 	http.Handle("/api/v1/files/upload", requireAuth(http.HandlerFunc(fileHandler.UploadHandler)))
 	http.Handle("/api/v1/files/download/", requireAuth(http.HandlerFunc(fileHandler.DownloadHandler)))
 	http.Handle("/api/v1/files", requireAuth(http.HandlerFunc(fileHandler.ListHandler)))
+
+	http.Handle("/api/v1/folders", requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			folderHandler.CreateHandler(w, r)
+		} else if r.Method == http.MethodGet {
+			folderHandler.ListHandler(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})))
+	http.Handle("/api/v1/folders/", requireAuth(http.HandlerFunc(folderHandler.DeleteHandler)))
 
 	log.Printf("Storage service starting on port %s (storageDir: %s, defaultQuota: %d bytes)...", port, storageDir, quotaBytes)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {

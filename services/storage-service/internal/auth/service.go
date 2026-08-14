@@ -194,6 +194,32 @@ func (s *DBAuthService) GetUserByID(ctx context.Context, userID uuid.UUID) (*Use
 	return &user, nil
 }
 
+func (s *DBAuthService) CleanupExpiredSessions(ctx context.Context) (int64, error) {
+	commandTag, err := s.pool.Exec(ctx, `DELETE FROM user_sessions WHERE expires_at < CURRENT_TIMESTAMP`)
+	if err != nil {
+		return 0, err
+	}
+	return commandTag.RowsAffected(), nil
+}
+
+func (s *DBAuthService) StartCleanupWorker(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 1 * time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				return
+			case <-ticker.C:
+				_, _ = s.CleanupExpiredSessions(ctx)
+			}
+		}
+	}()
+}
+
 type MockAuthService struct {
 	mu       sync.Mutex
 	sessions map[string]mockSession
