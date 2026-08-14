@@ -12,11 +12,11 @@
 
 | ID | Критичность | Заголовок | Где |
 |----|-------------|-----------|-----|
-| C1 | CRITICAL | Фолбэк на mock-аутентификацию с захардкоженным паролем при недоступности БД | `cmd/main.go:54-57`, `internal/auth/service.go:257-278` |
+| ✅ C1 (phase7-critical-quick-fixes, 2026-08-14) | CRITICAL | Фолбэк на mock-аутентификацию с захардкоженным паролем при недоступности БД | `cmd/main.go:54-57`, `internal/auth/service.go:257-278` |
 | C2 | CRITICAL | Метаданные файлов только в памяти: потеря данных при рестарте + IDOR (скачивание чужих файлов) | `internal/handler/file.go:35-49,165-174` |
-| C3 | CRITICAL | `/api/v1/auth/me` зарегистрирован без middleware аутентификации — всегда 401 | `cmd/main.go:86` |
+| ✅ C3 (phase7-critical-quick-fixes, 2026-08-14) | CRITICAL | `/api/v1/auth/me` зарегистрирован без middleware аутентификации — всегда 401 | `cmd/main.go:86` |
 | C4 | CRITICAL | Совокупная квота пользователя не контролируется, `used_bytes` не обновляется — исчерпание диска (DoS) | `internal/handler/file.go`, `internal/database/migrations/000001_init_schema.sql` |
-| C5 | CRITICAL | Порты `8080` (storage) и `5432` (PostgreSQL) опубликованы наружу — обход rate-limit и прямой доступ к БД | `docker-compose.yml:9-10,25-26` |
+| ✅ C5 (phase7-critical-quick-fixes, 2026-08-14) | CRITICAL | Порты `8080` (storage) и `5432` (PostgreSQL) опубликованы наружу — обход rate-limit и прямой доступ к БД | `docker-compose.yml:9-10,25-26` |
 | H1 | HIGH | Нет таймаутов HTTP-сервера и лимитов тела запроса (Slowloris, DoS) | `cmd/main.go:104`, `internal/handler/file.go:78` |
 | H2 | HIGH | ID файла не валидируется как UUID — риск path traversal при ошибках в `GetShardedPath` | `internal/storage/sharding.go:22-29`, `internal/handler/file.go:156-157` |
 | H3 | HIGH | Cookie без флага `Secure`, нет явной CSRF-защиты для cookie-сессий | `internal/auth/handler.go:52-59` |
@@ -40,7 +40,7 @@
 
 ## CRITICAL — исправлять в первую очередь
 
-### C1. Фолбэк на mock-аутентификацию с захардкоженными учётными данными
+### ✅ C1 (phase7-critical-quick-fixes, 2026-08-14). Фолбэк на mock-аутентификацию с захардкоженными учётными данными
 
 **Где:** `services/storage-service/cmd/main.go:54-57` и `:72-74`, `internal/auth/service.go:257-278`.
 
@@ -121,7 +121,7 @@ if email == "admin@simplecloud.local" && password == "adminpassword123" {
 
 ---
 
-### C3. `/api/v1/auth/me` всегда возвращает 401
+### ✅ C3 (phase7-critical-quick-fixes, 2026-08-14). `/api/v1/auth/me` всегда возвращает 401
 
 **Где:** `cmd/main.go:86`.
 
@@ -165,7 +165,7 @@ http.Handle("/api/v1/auth/me", requireAuth(http.HandlerFunc(authHandler.MeHandle
 
 ---
 
-### C5. Лишние опубликованные порты: `8080` и `5432`
+### ✅ C5 (phase7-critical-quick-fixes, 2026-08-14). Лишние опубликованные порты: `8080` и `5432`
 
 **Где:** `docker-compose.yml:9-10` (postgres) и `:25-26` (storage-service).
 
