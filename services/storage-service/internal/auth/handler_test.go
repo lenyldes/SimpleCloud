@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,9 +16,7 @@ import (
 )
 
 func TestAuthHandlersAndMiddleware(t *testing.T) {
-	// Mock Auth Service for testing HTTP handlers
 	svc := auth.NewMockAuthService()
-
 	handler := auth.NewAuthHandler(svc)
 
 	t.Run("Login success sets HttpOnly cookie", func(t *testing.T) {
@@ -71,6 +70,28 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 		}
 	})
 
+	t.Run("Login invalid body returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader("invalid json"))
+		rec := httptest.NewRecorder()
+
+		handler.LoginHandler(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request, got %d", rec.Code)
+		}
+	})
+
+	t.Run("Login method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/login", nil)
+		rec := httptest.NewRecorder()
+
+		handler.LoginHandler(rec, req)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected 405 Method Not Allowed, got %d", rec.Code)
+		}
+	})
+
 	t.Run("RequireAuth Middleware blocks unauthenticated requests", func(t *testing.T) {
 		protectedHandler := auth.RequireAuth(svc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -83,6 +104,22 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401 Unauthorized for unauthenticated request, got %d", rec.Code)
+		}
+	})
+
+	t.Run("RequireAuth Middleware blocks invalid token", func(t *testing.T) {
+		protectedHandler := auth.RequireAuth(svc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/files", nil)
+		req.Header.Set("Authorization", "Bearer invalid_token")
+		rec := httptest.NewRecorder()
+
+		protectedHandler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401 Unauthorized for invalid token, got %d", rec.Code)
 		}
 	})
 
@@ -106,6 +143,24 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 
 		if rec.Code != http.StatusOK {
 			t.Errorf("expected 200 OK for valid Bearer token, got %d", rec.Code)
+		}
+	})
+
+	t.Run("RequireAuth Middleware allows Cookie auth request", func(t *testing.T) {
+		validToken := svc.CreateValidSessionToken(uuid.New(), 24*time.Hour)
+
+		protectedHandler := auth.RequireAuth(svc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/files", nil)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validToken})
+		rec := httptest.NewRecorder()
+
+		protectedHandler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200 OK for cookie auth, got %d", rec.Code)
 		}
 	})
 
@@ -136,6 +191,31 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 		}
 	})
 
+	t.Run("Logout with Bearer token", func(t *testing.T) {
+		validToken := svc.CreateValidSessionToken(uuid.New(), 24*time.Hour)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+		req.Header.Set("Authorization", "Bearer "+validToken)
+		rec := httptest.NewRecorder()
+
+		handler.LogoutHandler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK on logout, got %d", rec.Code)
+		}
+	})
+
+	t.Run("Logout method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/logout", nil)
+		rec := httptest.NewRecorder()
+
+		handler.LogoutHandler(rec, req)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected 405 Method Not Allowed, got %d", rec.Code)
+		}
+	})
+
 	t.Run("MeHandler returns user profile for authenticated user", func(t *testing.T) {
 		userID := uuid.New()
 		ctx := auth.WithUserID(context.Background(), userID)
@@ -162,4 +242,27 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 			t.Errorf("expected ID %s, got %s", userID, resp.ID)
 		}
 	})
+
+	t.Run("MeHandler unauthenticated returns 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+		rec := httptest.NewRecorder()
+
+		handler.MeHandler(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401 Unauthorized, got %d", rec.Code)
+		}
+	})
+
+	t.Run("MeHandler method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/me", nil)
+		rec := httptest.NewRecorder()
+
+		handler.MeHandler(rec, req)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected 405 Method Not Allowed, got %d", rec.Code)
+		}
+	})
+
 }

@@ -13,6 +13,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
+	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/handler"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
 )
@@ -45,6 +48,7 @@ func TestFileUploadHandler_Success(t *testing.T) {
 		t.Fatalf("failed to create upload request: %v", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req = req.WithContext(auth.WithUserID(req.Context(), uuid.New()))
 
 	rr := httptest.NewRecorder()
 	h := http.HandlerFunc(fileHandler.UploadHandler)
@@ -101,6 +105,7 @@ func TestFileUploadHandler_QuotaExceeded(t *testing.T) {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req = req.WithContext(auth.WithUserID(req.Context(), uuid.New()))
 
 	rr := httptest.NewRecorder()
 	h := http.HandlerFunc(fileHandler.UploadHandler)
@@ -138,11 +143,14 @@ func TestFileDownloadHandler_SuccessAndNotFound(t *testing.T) {
 		t.Fatalf("failed to setup test file: %v", err)
 	}
 
+	testUserID := uuid.New()
+
 	t.Run("Successful download", func(t *testing.T) {
 		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/files/download/%s", fileID), nil)
 		if err != nil {
 			t.Fatalf("failed to create request: %v", err)
 		}
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 
 		rr := httptest.NewRecorder()
 		h := http.HandlerFunc(fileHandler.DownloadHandler)
@@ -167,6 +175,7 @@ func TestFileDownloadHandler_SuccessAndNotFound(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create request: %v", err)
 		}
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 
 		rr := httptest.NewRecorder()
 		h := http.HandlerFunc(fileHandler.DownloadHandler)
@@ -192,6 +201,7 @@ func TestFileListHandler_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
+	req = req.WithContext(auth.WithUserID(req.Context(), uuid.New()))
 
 	rr := httptest.NewRecorder()
 	h := http.HandlerFunc(fileHandler.ListHandler)
@@ -220,9 +230,11 @@ func TestFileHandler_InvalidMethodsAndInputs(t *testing.T) {
 
 	engine := storage.NewDiskEngine(tempDir)
 	fileHandler := handler.NewFileHandler(engine, 1024*1024)
+	testUserID := uuid.New()
 
 	t.Run("UploadHandler method not allowed", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/upload", nil)
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 		rr := httptest.NewRecorder()
 		fileHandler.UploadHandler(rr, req)
 		if rr.Code != http.StatusMethodNotAllowed {
@@ -233,6 +245,7 @@ func TestFileHandler_InvalidMethodsAndInputs(t *testing.T) {
 	t.Run("UploadHandler invalid multipart form", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", strings.NewReader("not a multipart body"))
 		req.Header.Set("Content-Type", "multipart/form-data; boundary=invalid")
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 		rr := httptest.NewRecorder()
 		fileHandler.UploadHandler(rr, req)
 		if rr.Code != http.StatusBadRequest {
@@ -248,6 +261,7 @@ func TestFileHandler_InvalidMethodsAndInputs(t *testing.T) {
 
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
 		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 		rr := httptest.NewRecorder()
 		fileHandler.UploadHandler(rr, req)
 		if rr.Code != http.StatusBadRequest {
@@ -257,6 +271,7 @@ func TestFileHandler_InvalidMethodsAndInputs(t *testing.T) {
 
 	t.Run("DownloadHandler method not allowed", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/download/1234", nil)
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 		rr := httptest.NewRecorder()
 		fileHandler.DownloadHandler(rr, req)
 		if rr.Code != http.StatusMethodNotAllowed {
@@ -266,6 +281,7 @@ func TestFileHandler_InvalidMethodsAndInputs(t *testing.T) {
 
 	t.Run("DownloadHandler missing file ID", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/download/", nil)
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 		rr := httptest.NewRecorder()
 		fileHandler.DownloadHandler(rr, req)
 		if rr.Code != http.StatusBadRequest {
@@ -275,10 +291,58 @@ func TestFileHandler_InvalidMethodsAndInputs(t *testing.T) {
 
 	t.Run("ListHandler method not allowed", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files", nil)
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 		rr := httptest.NewRecorder()
 		fileHandler.ListHandler(rr, req)
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Errorf("expected 405, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DownloadHandler unauthenticated returns 401", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/download/1234", nil)
+		rr := httptest.NewRecorder()
+		fileHandler.DownloadHandler(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", rr.Code)
+		}
+	})
+
+	t.Run("ListHandler unauthenticated returns 401", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files", nil)
+		rr := httptest.NewRecorder()
+		fileHandler.ListHandler(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DownloadHandler another user file returns 404", func(t *testing.T) {
+		userA := uuid.New()
+		userB := uuid.New()
+
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, _ := writer.CreateFormFile("file", "usera.txt")
+		_, _ = part.Write([]byte("data"))
+		_ = writer.Close()
+
+		uploadReq, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
+		uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+		uploadReq = uploadReq.WithContext(auth.WithUserID(uploadReq.Context(), userA))
+		uploadRR := httptest.NewRecorder()
+		fileHandler.UploadHandler(uploadRR, uploadReq)
+
+		var meta handler.FileMetadata
+		_ = json.NewDecoder(uploadRR.Body).Decode(&meta)
+
+		dlReq, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/files/download/%s", meta.ID), nil)
+		dlReq = dlReq.WithContext(auth.WithUserID(dlReq.Context(), userB))
+		dlRR := httptest.NewRecorder()
+		fileHandler.DownloadHandler(dlRR, dlReq)
+
+		if dlRR.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for downloading another user file, got %d", dlRR.Code)
 		}
 	})
 }
@@ -292,6 +356,7 @@ func TestFileDownloadHandler_WithMetadata(t *testing.T) {
 
 	engine := storage.NewDiskEngine(tempDir)
 	fileHandler := handler.NewFileHandler(engine, 1024*1024)
+	testUserID := uuid.New()
 
 	// First upload a file to populate metadata in fileHandler
 	content := []byte("Metadata attachment download test")
@@ -303,6 +368,7 @@ func TestFileDownloadHandler_WithMetadata(t *testing.T) {
 
 	uploadReq, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
 	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	uploadReq = uploadReq.WithContext(auth.WithUserID(uploadReq.Context(), testUserID))
 	uploadRR := httptest.NewRecorder()
 	fileHandler.UploadHandler(uploadRR, uploadReq)
 
@@ -317,6 +383,7 @@ func TestFileDownloadHandler_WithMetadata(t *testing.T) {
 
 	// Now download the uploaded file
 	dlReq, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/files/download/%s", meta.ID), nil)
+	dlReq = dlReq.WithContext(auth.WithUserID(dlReq.Context(), testUserID))
 	dlRR := httptest.NewRecorder()
 	fileHandler.DownloadHandler(dlRR, dlReq)
 
@@ -331,6 +398,7 @@ func TestFileDownloadHandler_WithMetadata(t *testing.T) {
 
 	// Also verify ListHandler returns this item
 	listReq, _ := http.NewRequest(http.MethodGet, "/api/v1/files", nil)
+	listReq = listReq.WithContext(auth.WithUserID(listReq.Context(), testUserID))
 	listRR := httptest.NewRecorder()
 	fileHandler.ListHandler(listRR, listReq)
 
@@ -359,6 +427,7 @@ func TestFileUploadHandler_SaveError500(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req = req.WithContext(auth.WithUserID(req.Context(), uuid.New()))
 	rr := httptest.NewRecorder()
 	unwritableHandler.UploadHandler(rr, req)
 
