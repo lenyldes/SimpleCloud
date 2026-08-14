@@ -46,6 +46,16 @@ func TestInitDB_ErrorCases(t *testing.T) {
 			t.Errorf("unexpected error message: %v", err)
 		}
 	})
+
+	t.Run("Invalid port connection string", func(t *testing.T) {
+		_, err := database.InitDB(ctx, "postgres://user:pass@localhost:invalidport/dbname")
+		if err == nil {
+			t.Fatal("expected error for invalid port connection string, got nil")
+		}
+		if !strings.Contains(err.Error(), "failed to parse conn config") {
+			t.Errorf("unexpected error message: %v", err)
+		}
+	})
 }
 
 func TestRunMigrations_OfflinePoolError(t *testing.T) {

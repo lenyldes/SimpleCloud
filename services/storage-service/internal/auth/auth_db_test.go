@@ -174,3 +174,22 @@ func TestDBAuthService_CleanupExpiredSessions(t *testing.T) {
 		t.Errorf("expected valid session to remain in DB, but found %d rows", count)
 	}
 }
+
+func TestDBAuthService_StartCleanupWorker(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	connStr := "postgres://simplecloud_user:simplecloud_dev_password@127.0.0.1:5432/simplecloud?sslmode=disable"
+	pool, err := database.InitDB(ctx, connStr)
+	if err != nil {
+		t.Skipf("Skipping DBAuthService cleanup worker test; postgres database not accessible: %v", err)
+	}
+	defer pool.Close()
+
+	dbAuth := auth.NewDBAuthService(pool, 1*time.Hour)
+	workerCtx, workerCancel := context.WithCancel(ctx)
+	dbAuth.StartCleanupWorker(workerCtx, 10*time.Millisecond)
+	time.Sleep(35 * time.Millisecond)
+	workerCancel()
+}
+
