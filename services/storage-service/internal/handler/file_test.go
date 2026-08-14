@@ -9,6 +9,9 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -951,3 +954,91 @@ func TestFileHandler_DeleteHandler_BranchCoverage(t *testing.T) {
 		}
 	})
 }
+
+// --- Task 1.3: Content-Disposition format and sanitization tests (phase7-final-cleanup) ---
+
+func TestFileDownload_ContentDispositionFormat(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userID := createTestUser(t, pool, 10*1024*1024)
+
+	t.Run("Cyrillic filename contains filename* UTF-8 RFC 5987 and ASCII fallback", func(t *testing.T) {
+		cyrillicName := "отчёт.pdf"
+		rr := uploadTestFile(t, fh, userID, cyrillicName, []byte("cyrillic content"), "")
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected 201 Created, got %d", rr.Code)
+		}
+		meta := decodeFileMeta(t, rr)
+
+		dlRR := downloadFileRequest(fh, userID, meta.ID)
+		if dlRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK download, got %d", dlRR.Code)
+		}
+
+		cd := dlRR.Header().Get("Content-Disposition")
+		if !strings.Contains(cd, "filename*=UTF-8''") {
+			t.Errorf("expected Content-Disposition to contain filename*=UTF-8'', got %q", cd)
+		}
+		expectedEscaped := url.PathEscape(cyrillicName)
+		if !strings.Contains(cd, expectedEscaped) {
+			t.Errorf("expected Content-Disposition to contain percent-encoded name %q, got %q", expectedEscaped, cd)
+		}
+		if !strings.Contains(cd, "filename=") {
+			t.Errorf("expected Content-Disposition to contain ASCII fallback filename, got %q", cd)
+		}
+	})
+
+	t.Run("ASCII filename uses filename=\"report.pdf\"", func(t *testing.T) {
+		asciiName := "report.pdf"
+		rr := uploadTestFile(t, fh, userID, asciiName, []byte("ascii content"), "")
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected 201 Created, got %d", rr.Code)
+		}
+		meta := decodeFileMeta(t, rr)
+
+		dlRR := downloadFileRequest(fh, userID, meta.ID)
+		if dlRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK download, got %d", dlRR.Code)
+		}
+
+		cd := dlRR.Header().Get("Content-Disposition")
+		expected := `attachment; filename="report.pdf"`
+		if cd != expected {
+			t.Errorf("expected Content-Disposition %q, got %q", expected, cd)
+		}
+	})
+
+	t.Run("Filename with CR/LF and quotes is sanitized against header injection", func(t *testing.T) {
+		dirtyName := "report\r\nX-Injected-Header: evil\n\"quote.pdf"
+		fileID := uuid.New()
+		storagePath := filepath.Join(tempDir, fileID.String())
+		if err := os.WriteFile(storagePath, []byte("dirty content"), 0644); err != nil {
+			t.Fatalf("failed to write dummy storage file: %v", err)
+		}
+
+		_, err := pool.Exec(context.Background(),
+			`INSERT INTO files (id, user_id, filename, storage_path, size_bytes, mime_type, sha256_hash) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			fileID, userID, dirtyName, storagePath, 13, "application/octet-stream", "dummyhash123")
+		if err != nil {
+			t.Fatalf("failed to insert test file record with dirty filename: %v", err)
+		}
+
+		dlRR := downloadFileRequest(fh, userID, fileID.String())
+		if dlRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK download, got %d", dlRR.Code)
+		}
+
+		if dlRR.Header().Get("X-Injected-Header") != "" {
+			t.Error("header injection detected: X-Injected-Header was set")
+		}
+
+		cd := dlRR.Header().Get("Content-Disposition")
+		if strings.Contains(cd, "\r") || strings.Contains(cd, "\n") || strings.Contains(cd, `\"`) {
+			t.Errorf("Content-Disposition contains unsanitized CR, LF, or quotes: %q", cd)
+		}
+	})
+}
+

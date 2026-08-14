@@ -2,8 +2,11 @@ package database_test
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -210,3 +213,141 @@ func TestSchemaMigrationsTable(t *testing.T) {
 		t.Errorf("expected count of schema_migrations to stay at %d on rerun, got %d", count, countAfter)
 	}
 }
+
+// --- Task 1.1 & 1.2: RunMigrationsFS Unit & Integration Tests (phase7-final-cleanup) ---
+
+type failingOpenFS struct {
+	fstest.MapFS
+	failFile string
+}
+
+func (f *failingOpenFS) Open(name string) (fs.File, error) {
+	if name == f.failFile {
+		return nil, errors.New("simulated open error for test")
+	}
+	return f.MapFS.Open(name)
+}
+
+func getTestPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	connStr := "postgres://simplecloud_user:simplecloud_dev_password@127.0.0.1:5432/simplecloud?sslmode=disable"
+	pool, err := database.InitDB(ctx, connStr)
+	if err != nil {
+		t.Skipf("Skipping integration test; postgres database not accessible: %v", err)
+	}
+	return pool
+}
+
+func TestRunMigrationsFS_Unit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	t.Run("Missing migrations directory returns error", func(t *testing.T) {
+		emptyFS := fstest.MapFS{} // no "migrations" dir
+		err := database.RunMigrationsFS(ctx, nil, emptyFS)
+		if err == nil {
+			t.Fatal("expected error for missing migrations directory, got nil")
+		}
+		if !strings.Contains(err.Error(), "migrations") && !strings.Contains(err.Error(), "failed to read") {
+			t.Errorf("expected error describing unreadable migrations directory, got: %v", err)
+		}
+	})
+
+	t.Run("Empty migrations directory succeeds", func(t *testing.T) {
+		pool := getTestPool(t)
+		emptyDirFS := fstest.MapFS{
+			"migrations": &fstest.MapFile{Mode: fs.ModeDir},
+		}
+		err := database.RunMigrationsFS(ctx, pool, emptyDirFS)
+		if err != nil {
+			t.Errorf("expected success for empty migrations directory, got: %v", err)
+		}
+	})
+
+	t.Run("Subdirectories in migrations directory are skipped", func(t *testing.T) {
+		pool := getTestPool(t)
+		subdirFS := fstest.MapFS{
+			"migrations":           &fstest.MapFile{Mode: fs.ModeDir},
+			"migrations/subfolder": &fstest.MapFile{Mode: fs.ModeDir},
+		}
+		err := database.RunMigrationsFS(ctx, pool, subdirFS)
+		if err != nil {
+			t.Errorf("expected subdirectories to be skipped without error, got: %v", err)
+		}
+	})
+
+	t.Run("Unreadable migration file returns error naming failing file", func(t *testing.T) {
+		pool := getTestPool(t)
+		failingFS := &failingOpenFS{
+			MapFS: fstest.MapFS{
+				"migrations":                      &fstest.MapFile{Mode: fs.ModeDir},
+				"migrations/999999_unreadable.sql": &fstest.MapFile{Data: []byte("SELECT 1;")},
+			},
+			failFile: "migrations/999999_unreadable.sql",
+		}
+		err := database.RunMigrationsFS(ctx, pool, failingFS)
+		if err == nil {
+			t.Fatal("expected error reading migration file, got nil")
+		}
+		if !strings.Contains(err.Error(), "999999_unreadable.sql") && !strings.Contains(err.Error(), "read") {
+			t.Errorf("expected error to name failing file, got: %v", err)
+		}
+	})
+}
+
+func TestRunMigrationsFS_Integration(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	t.Run("Invalid SQL migration causes rollback and no journal record", func(t *testing.T) {
+		pool := getTestPool(t)
+
+		invalidSQLFS := fstest.MapFS{
+			"migrations": &fstest.MapFile{Mode: fs.ModeDir},
+			"migrations/999999_invalid_sql.sql": &fstest.MapFile{
+				Data: []byte("INVALID SQL SYNTAX AT ALL;"),
+			},
+		}
+
+		err := database.RunMigrationsFS(ctx, pool, invalidSQLFS)
+		if err == nil {
+			t.Fatal("expected error for invalid SQL migration, got nil")
+		}
+
+		var exists bool
+		err = pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '999999_invalid_sql.sql')").Scan(&exists)
+		if err != nil {
+			t.Fatalf("failed to query schema_migrations: %v", err)
+		}
+		if exists {
+			t.Error("expected failed migration NOT to be recorded in schema_migrations")
+		}
+	})
+
+	t.Run("Re-running migrations skips already applied versions", func(t *testing.T) {
+		pool := getTestPool(t)
+
+		validFS := fstest.MapFS{
+			"migrations": &fstest.MapFile{Mode: fs.ModeDir},
+			"migrations/888888_test_applied.sql": &fstest.MapFile{
+				Data: []byte("CREATE TABLE IF NOT EXISTS test_applied_table (id INT);"),
+			},
+		}
+
+		err := database.RunMigrationsFS(ctx, pool, validFS)
+		if err != nil {
+			t.Fatalf("first run failed: %v", err)
+		}
+
+		err = database.RunMigrationsFS(ctx, pool, validFS)
+		if err != nil {
+			t.Fatalf("second run failed: %v", err)
+		}
+
+		_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS test_applied_table;")
+		_, _ = pool.Exec(ctx, "DELETE FROM schema_migrations WHERE version = '888888_test_applied.sql';")
+	})
+}
+

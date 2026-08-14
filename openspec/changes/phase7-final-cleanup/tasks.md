@@ -4,10 +4,10 @@
 
 ## 1. Тесты (RED) — `[TEST-AGENT]`
 
-- [ ] 1.1 `internal/database`: RED-тесты `RunMigrationsFS` на `fstest.MapFS` — отсутствие каталога `migrations` → ошибка; пустой каталог → успех без применения; поддиректория в каталоге → пропускается (не исполняется как миграция); кастомный `fs.FS` с падающим `Open` → ошибка чтения файла (сценарии delta-spec `database-lifecycle`).
-- [ ] 1.2 `internal/database`: RED интеграционные тесты с живой БД (скип без Postgres) — невалидный SQL в миграции → rollback, запись в журнал не появляется, сервис падает с описательной ошибкой; повторный прогон `RunMigrations` → применённые версии пропускаются.
-- [ ] 1.3 `internal/handler`: RED-тесты `Content-Disposition` в `DownloadHandler` — кириллическое имя (`отчёт.pdf`) → заголовок содержит ASCII-фолбэк `filename` и `filename*=UTF-8''` с корректным percent-encoding; ASCII-имя (`report.pdf`) → `filename="report.pdf"`; имя с `\r\n"`/кавычками → санация, без инъекции заголовков (сценарии delta-spec `file-storage`).
-- [ ] 1.4 Закоммитить RED-тесты (`ADD:`), убедиться, что они падают по ожидаемым причинам, обновить этот файл задач.
+- [x] 1.1 `internal/database`: RED-тесты `RunMigrationsFS` на `fstest.MapFS` — отсутствие каталога `migrations` → ошибка; пустой каталог → успех без применения; поддиректория в каталоге → пропускается (не исполняется как миграция); кастомный `fs.FS` с падающим `Open` → ошибка чтения файла (сценарии delta-spec `database-lifecycle`).
+- [x] 1.2 `internal/database`: RED интеграционные тесты с живой БД (скип без Postgres) — невалидный SQL в миграции → rollback, запись в журнал не появляется, сервис падает с описательной ошибкой; повторный прогон `RunMigrations` → применённые версии пропускаются.
+- [x] 1.3 `internal/handler`: RED-тесты `Content-Disposition` в `DownloadHandler` — кириллическое имя (`отчёт.pdf`) → заголовок содержит ASCII-фолбэк `filename` и `filename*=UTF-8''` с корректным percent-encoding; ASCII-имя (`report.pdf`) → `filename="report.pdf"`; имя с `\r\n"`/кавычками → санация, без инъекции заголовков (сценарии delta-spec `file-storage`).
+- [x] 1.4 Закоммитить RED-тесты (`ADD:`), убедиться, что они падают по ожидаемым причинам, обновить этот файл задач.
 
 ## 2. Реализация O2 — миграции с `fs.FS` (GREEN) — `[CODE-AGENT]`
 
