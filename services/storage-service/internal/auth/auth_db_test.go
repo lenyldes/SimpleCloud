@@ -102,3 +102,76 @@ func TestDBAuthService_Integration(t *testing.T) {
 		t.Errorf("expected ErrUnauthorized after logout, got: %v", err)
 	}
 }
+
+func TestDBAuthService_CleanupExpiredSessions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	connStr := "postgres://simplecloud_user:simplecloud_dev_password@127.0.0.1:5432/simplecloud?sslmode=disable"
+	pool, err := database.InitDB(ctx, connStr)
+	if err != nil {
+		t.Skipf("Skipping DBAuthService cleanup test; postgres database not accessible: %v", err)
+	}
+	defer pool.Close()
+
+	// Clean up stale session & user data
+	_, _ = pool.Exec(ctx, `DELETE FROM user_sessions`)
+	_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = '00000000-0000-0000-0000-000000000001' OR email = 'admin@simplecloud.local'`)
+
+	err = auth.SeedAdminUser(ctx, pool, "admin@simplecloud.local", "adminpassword123")
+	if err != nil {
+		t.Fatalf("failed to seed admin user: %v", err)
+	}
+
+	dbAuth := auth.NewDBAuthService(pool, 1*time.Hour)
+
+	userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+	// Insert expired session (expired 2 hours ago)
+	expiredSessionID := uuid.New()
+	_, err = pool.Exec(ctx,
+		`INSERT INTO user_sessions (id, user_id, token_hash, expires_at, user_agent, client_ip) VALUES ($1, $2, $3, $4, $5, $6)`,
+		expiredSessionID, userID, "hash_expired_session_123", time.Now().Add(-2*time.Hour), "TestAgent", "127.0.0.1",
+	)
+	if err != nil {
+		t.Fatalf("failed to insert expired session: %v", err)
+	}
+
+	// Insert valid active session (expires in 2 hours)
+	validSessionID := uuid.New()
+	_, err = pool.Exec(ctx,
+		`INSERT INTO user_sessions (id, user_id, token_hash, expires_at, user_agent, client_ip) VALUES ($1, $2, $3, $4, $5, $6)`,
+		validSessionID, userID, "hash_valid_session_456", time.Now().Add(2*time.Hour), "TestAgent", "127.0.0.1",
+	)
+	if err != nil {
+		t.Fatalf("failed to insert valid session: %v", err)
+	}
+
+	// Call CleanupExpiredSessions method on dbAuth
+	purgedCount, err := dbAuth.CleanupExpiredSessions(ctx)
+	if err != nil {
+		t.Fatalf("expected no error during CleanupExpiredSessions, got: %v", err)
+	}
+	if purgedCount != 1 {
+		t.Errorf("expected 1 session purged, got %d", purgedCount)
+	}
+
+	// Verify DB state: expired session should be deleted, valid session present
+	var count int
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM user_sessions WHERE id = $1`, expiredSessionID).Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to query expired session: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected expired session to be deleted from DB, but found %d rows", count)
+	}
+
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM user_sessions WHERE id = $1`, validSessionID).Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to query valid session: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected valid session to remain in DB, but found %d rows", count)
+	}
+}
+

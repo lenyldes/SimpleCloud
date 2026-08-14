@@ -435,3 +435,144 @@ func TestFileUploadHandler_SaveError500(t *testing.T) {
 		t.Errorf("expected 500 Internal Server Error, got %d", rr.Code)
 	}
 }
+
+func TestFileUploadHandler_WithFolderID(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "file_handler_folder_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine := storage.NewDiskEngine(tempDir)
+	fileHandler := handler.NewFileHandler(engine, 10*1024*1024)
+	testUserID := uuid.New()
+	targetFolderID := uuid.New().String()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("folder_id", targetFolderID)
+	part, err := writer.CreateFormFile("file", "nested_file.txt")
+	if err != nil {
+		t.Fatalf("failed to create form file: %v", err)
+	}
+	_, _ = part.Write([]byte("Nested file content inside folder"))
+	_ = writer.Close()
+
+	req, err := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
+	if err != nil {
+		t.Fatalf("failed to create upload request: %v", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
+
+	rr := httptest.NewRecorder()
+	h := http.HandlerFunc(fileHandler.UploadHandler)
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected HTTP 201 Created, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp handler.FileMetadata
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response JSON: %v", err)
+	}
+
+	if resp.FolderID == nil || *resp.FolderID != targetFolderID {
+		t.Errorf("expected folder_id %s, got %v", targetFolderID, resp.FolderID)
+	}
+}
+
+func TestFileListHandler_FolderScoped(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "file_list_folder_scoped_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine := storage.NewDiskEngine(tempDir)
+	fileHandler := handler.NewFileHandler(engine, 10*1024*1024)
+	testUserID := uuid.New()
+	folderID := uuid.New().String()
+
+	// 1. Upload root file (no folder_id)
+	bodyRoot := &bytes.Buffer{}
+	writerRoot := multipart.NewWriter(bodyRoot)
+	partRoot, _ := writerRoot.CreateFormFile("file", "root.txt")
+	_, _ = partRoot.Write([]byte("root file"))
+	_ = writerRoot.Close()
+
+	reqRoot, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", bodyRoot)
+	reqRoot.Header.Set("Content-Type", writerRoot.FormDataContentType())
+	reqRoot = reqRoot.WithContext(auth.WithUserID(reqRoot.Context(), testUserID))
+	rrRoot := httptest.NewRecorder()
+	fileHandler.UploadHandler(rrRoot, reqRoot)
+
+	// 2. Upload nested file (with folder_id)
+	bodyNested := &bytes.Buffer{}
+	writerNested := multipart.NewWriter(bodyNested)
+	_ = writerNested.WriteField("folder_id", folderID)
+	partNested, _ := writerNested.CreateFormFile("file", "nested.txt")
+	_, _ = partNested.Write([]byte("nested file"))
+	_ = writerNested.Close()
+
+	reqNested, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", bodyNested)
+	reqNested.Header.Set("Content-Type", writerNested.FormDataContentType())
+	reqNested = reqNested.WithContext(auth.WithUserID(reqNested.Context(), testUserID))
+	rrNested := httptest.NewRecorder()
+	fileHandler.UploadHandler(rrNested, reqNested)
+
+	// 3. GET /api/v1/files (root files only)
+	reqGetRoot, _ := http.NewRequest(http.MethodGet, "/api/v1/files", nil)
+	reqGetRoot = reqGetRoot.WithContext(auth.WithUserID(reqGetRoot.Context(), testUserID))
+	rrGetRoot := httptest.NewRecorder()
+	fileHandler.ListHandler(rrGetRoot, reqGetRoot)
+
+	var rootList []handler.FileMetadata
+	_ = json.NewDecoder(rrGetRoot.Body).Decode(&rootList)
+	if len(rootList) != 1 || rootList[0].Filename != "root.txt" {
+		t.Errorf("expected 1 root file 'root.txt', got %v", rootList)
+	}
+
+	// 4. GET /api/v1/files?folder_id=<folderID> (nested files only)
+	reqGetNested, _ := http.NewRequest(http.MethodGet, "/api/v1/files?folder_id="+folderID, nil)
+	reqGetNested = reqGetNested.WithContext(auth.WithUserID(reqGetNested.Context(), testUserID))
+	rrGetNested := httptest.NewRecorder()
+	fileHandler.ListHandler(rrGetNested, reqGetNested)
+
+	var nestedList []handler.FileMetadata
+	_ = json.NewDecoder(rrGetNested.Body).Decode(&nestedList)
+	if len(nestedList) != 1 || nestedList[0].Filename != "nested.txt" {
+		t.Errorf("expected 1 nested file 'nested.txt', got %v", nestedList)
+	}
+}
+
+func TestFileUploadHandler_PreStreamContentLengthQuotaExceeded(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "file_handler_prestream_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine := storage.NewDiskEngine(tempDir)
+	fileHandler := handler.NewFileHandler(engine, 100) // quota limit 100 bytes
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "oversized.bin")
+	_, _ = part.Write(bytes.Repeat([]byte("A"), 500))
+	_ = writer.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Content-Length", "5000") // Advertised Content-Length far exceeds 100 byte quota
+	req = req.WithContext(auth.WithUserID(req.Context(), uuid.New()))
+
+	rr := httptest.NewRecorder()
+	fileHandler.UploadHandler(rr, req)
+
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413 Payload Too Large on pre-stream Content-Length check, got %d", rr.Code)
+	}
+}
+
