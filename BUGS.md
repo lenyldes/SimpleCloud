@@ -13,14 +13,14 @@
 | ID | Критичность | Заголовок | Где |
 |----|-------------|-----------|-----|
 | ✅ C1 (phase7-critical-quick-fixes, 2026-08-14) | CRITICAL | Фолбэк на mock-аутентификацию с захардкоженным паролем при недоступности БД | `cmd/main.go:54-57`, `internal/auth/service.go:257-278` |
-| C2 | CRITICAL | Метаданные файлов только в памяти: потеря данных при рестарте + IDOR (скачивание чужих файлов) | `internal/handler/file.go:35-49,165-174` |
+| ✅ C2 (phase7-db-quotas-deletion, 2026-08-14) | CRITICAL | Метаданные файлов только в памяти: потеря данных при рестарте + IDOR (скачивание чужих файлов) | `internal/handler/file.go:35-49,165-174` |
 | ✅ C3 (phase7-critical-quick-fixes, 2026-08-14) | CRITICAL | `/api/v1/auth/me` зарегистрирован без middleware аутентификации — всегда 401 | `cmd/main.go:86` |
-| C4 | CRITICAL | Совокупная квота пользователя не контролируется, `used_bytes` не обновляется — исчерпание диска (DoS) | `internal/handler/file.go`, `internal/database/migrations/000001_init_schema.sql` |
+| ✅ C4 (phase7-db-quotas-deletion, 2026-08-14) | CRITICAL | Совокупная квота пользователя не контролируется, `used_bytes` не обновляется — исчерпание диска (DoS) | `internal/handler/file.go`, `internal/database/migrations/000001_init_schema.sql` |
 | ✅ C5 (phase7-critical-quick-fixes, 2026-08-14) | CRITICAL | Порты `8080` (storage) и `5432` (PostgreSQL) опубликованы наружу — обход rate-limit и прямой доступ к БД | `docker-compose.yml:9-10,25-26` |
 | H1 | HIGH | Нет таймаутов HTTP-сервера и лимитов тела запроса (Slowloris, DoS) | `cmd/main.go:104`, `internal/handler/file.go:78` |
 | H2 | HIGH | ID файла не валидируется как UUID — риск path traversal при ошибках в `GetShardedPath` | `internal/storage/sharding.go:22-29`, `internal/handler/file.go:156-157` |
 | H3 | HIGH | Cookie без флага `Secure`, нет явной CSRF-защиты для cookie-сессий | `internal/auth/handler.go:52-59` |
-| H4 | HIGH | Удаление папки не удаляет файлы; эндпоинта удаления файлов нет вообще — бесконечный рост диска и «осиротевшие» файлы | `internal/handler/folder.go:183-231`, `cmd/main.go` |
+| ✅ H4 (phase7-db-quotas-deletion, 2026-08-14) | HIGH | Удаление папки не удаляет файлы; эндпоинта удаления файлов нет вообще — бесконечный рост диска и «осиротевшие» файлы | `internal/handler/folder.go:183-231`, `cmd/main.go` |
 | H5 | HIGH | Контейнеры работают от root, файлы на хост-томе создаются root-ом | `services/storage-service/Dockerfile`, `services/web-frontend/Dockerfile` |
 | M1 | MEDIUM | Строка подключения к БД собирается конкатенацией — ломается на спецсимволах в пароле; `sslmode=disable` | `cmd/main.go:49` |
 | M2 | MEDIUM | Нет graceful shutdown — незавершённые загрузки обрываются при деплое/рестарте | `cmd/main.go:104` |
@@ -28,8 +28,8 @@
 | M4 | MEDIUM | Timing-перечисление пользователей при логине | `internal/auth/service.go:120-134` |
 | M5 | MEDIUM | CSP разрешает `'unsafe-inline'` для скриптов | `services/web-frontend/nginx.conf:17` |
 | M6 | MEDIUM | Срок жизни cookie захардкожен (24ч) и не связан с `sessionDuration` | `internal/auth/handler.go:58` |
-| M7 | MEDIUM | Ошибка парсинга UUID родителя молча игнорируется — рассинхрон память/БД | `internal/handler/folder.go:106-113` |
-| M8 | MEDIUM | Предпроверка размера загрузки сравнивает файл со всей квотой, а не с остатком | `internal/handler/file.go:66-75` |
+| ✅ M7 (phase7-db-quotas-deletion, 2026-08-14) | MEDIUM | Ошибка парсинга UUID родителя молча игнорируется — рассинхрон память/БД | `internal/handler/folder.go:106-113` |
+| ✅ M8 (phase7-db-quotas-deletion, 2026-08-14) | MEDIUM | Предпроверка размера загрузки сравнивает файл со всей квотой, а не с остатком | `internal/handler/file.go:66-75` |
 | L1 | LOW | Фронтенд шлёт несуществующее поле `state.currentPath` («undefined») | `services/web-frontend/src/app.js:200-204` |
 | L2 | LOW | Повторная загрузка того же файла не работает (не сбрасывается `input.value`) | `services/web-frontend/src/app.js:626-632` |
 | L3 | LOW | Индикатор квоты считает только файлы корня | `services/web-frontend/src/app.js:259-280` |
@@ -73,7 +73,7 @@ if email == "admin@simplecloud.local" && password == "adminpassword123" {
 
 ---
 
-### C2. Метаданные файлов хранятся только в оперативной памяти
+### ✅ C2 (phase7-db-quotas-deletion, 2026-08-14). Метаданные файлов хранятся только в оперативной памяти
 
 **Где:** `internal/handler/file.go:35-49` (`files map[string]FileMetadata`), `:132-134` (запись), `:165-174` (проверка владельца при скачивании), `:232-254` (список).
 
@@ -139,7 +139,7 @@ http.Handle("/api/v1/auth/me", requireAuth(http.HandlerFunc(authHandler.MeHandle
 
 ---
 
-### C4. Нет контроля совокупной квоты — переполнение диска (DoS)
+### ✅ C4 (phase7-db-quotas-deletion, 2026-08-14). Нет контроля совокупной квоты — переполнение диска (DoS)
 
 **Где:** `internal/handler/file.go:66-75` и `:109`; колонки `quota_bytes/used_bytes` в `users` существуют, но не обновляются нигде.
 
@@ -272,7 +272,7 @@ if strings.ContainsAny(fileID, "/\\") || filepath.Base(fileID) != fileID {
 
 ---
 
-### H4. Нет удаления файлов; удаление папки оставляет файлы-сироты
+### ✅ H4 (phase7-db-quotas-deletion, 2026-08-14). Нет удаления файлов; удаление папки оставляет файлы-сироты
 
 **Где:** `internal/handler/folder.go:183-231`; эндпоинта `DELETE /api/v1/files/:id` нет вообще (см. `cmd/main.go:88-101`).
 
@@ -394,7 +394,7 @@ if err != nil { // user not found
 
 **Как исправить:** пробросьте длительность сессии в `AuthHandler` (через конструктор или метод сервиса `SessionTTL()`) и используйте её в `Expires`.
 
-### M7. Молчаливое игнорирование ошибки парсинга UUID родителя
+### ✅ M7 (phase7-db-quotas-deletion, 2026-08-14). Молчаливое игнорирование ошибки парсинга UUID родителя
 
 **Где:** `internal/handler/folder.go:106-113`.
 
@@ -402,7 +402,7 @@ if err != nil { // user not found
 
 **Как исправить:** если `parent_id` задан, но не парсится — возвращайте 400 `invalid parent_id`. И вообще после перевода метаданных на БД (C2) этот dual-write исчезнет.
 
-### M8. Предпроверка размера файла сравнивает со всей квотой
+### ✅ M8 (phase7-db-quotas-deletion, 2026-08-14). Предпроверка размера файла сравнивает со всей квотой
 
 **Где:** `internal/handler/file.go:66-75`. См. C4 — исправляется одновременно (сравнение с остатком квоты).
 
