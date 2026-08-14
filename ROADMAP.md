@@ -19,9 +19,9 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] TDD unit & integration test suite.
 
 - [ ] **Phase 3: Authentication & Multi-Tenancy**
-  - [ ] User accounts table and seeding initial admin user.
-  - [ ] Authentication using secure HTTP-only cookies (Web UI) and Bearer JWT / API Tokens (external clients).
-  - [ ] Strict user isolation (`WHERE user_id = $1` on all SQL queries).
+  - [ ] User accounts schema (`users`, `user_sessions`), password hashing (bcrypt), and seeding initial admin user.
+  - [ ] Session authentication using secure HTTP-only cookies (Web UI) with extensible middleware supporting `Authorization: Bearer`.
+  - [ ] Strict user isolation (`WHERE user_id = $1` on all SQL queries and handlers).
 
 - [ ] **Phase 4: Frontend Web UI (Vanilla JS)**
   - [ ] Ultra-lightweight Vanilla HTML/CSS/JS frontend served via Go / Nginx container.
