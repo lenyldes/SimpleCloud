@@ -26,10 +26,45 @@ func TestDBAuthService_Integration(t *testing.T) {
 	_, _ = pool.Exec(ctx, `DELETE FROM user_sessions`)
 	_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = '00000000-0000-0000-0000-000000000001' OR email = 'admin@simplecloud.local'`)
 
-	// 1. Test SeedAdminUser
+	// 1. Test SeedAdminUser with empty arguments (should skip seeding and NOT create admin)
+	err = auth.SeedAdminUser(ctx, pool, "", "")
+	if err != nil {
+		t.Fatalf("expected nil error when seeding with empty args, got: %v", err)
+	}
+	var emptySeedCount int
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE role = 'admin' OR email = 'admin@simplecloud.local'`).Scan(&emptySeedCount)
+	if err != nil {
+		t.Fatalf("failed to query admin user count after empty seed: %v", err)
+	}
+	if emptySeedCount != 0 {
+		t.Errorf("expected 0 admin users created when empty args supplied, got %d", emptySeedCount)
+	}
+
+	// Test SeedAdminUser with missing password (should skip seeding and NOT create admin)
+	err = auth.SeedAdminUser(ctx, pool, "admin@simplecloud.local", "")
+	if err != nil {
+		t.Fatalf("expected nil error when seeding with empty password, got: %v", err)
+	}
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE role = 'admin' OR email = 'admin@simplecloud.local'`).Scan(&emptySeedCount)
+	if err != nil {
+		t.Fatalf("failed to query admin user count after empty password seed: %v", err)
+	}
+	if emptySeedCount != 0 {
+		t.Errorf("expected 0 admin users created when empty password supplied, got %d", emptySeedCount)
+	}
+
+	// Test SeedAdminUser with valid arguments (should seed admin user successfully)
 	err = auth.SeedAdminUser(ctx, pool, "admin@simplecloud.local", "adminpassword123")
 	if err != nil {
-		t.Fatalf("failed to seed admin user: %v", err)
+		t.Fatalf("failed to seed admin user with valid args: %v", err)
+	}
+	var validSeedCount int
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE role = 'admin' OR email = 'admin@simplecloud.local'`).Scan(&validSeedCount)
+	if err != nil {
+		t.Fatalf("failed to query admin user count after valid seed: %v", err)
+	}
+	if validSeedCount != 1 {
+		t.Errorf("expected 1 admin user created after valid seed, got %d", validSeedCount)
 	}
 
 	// Re-seeding when already existing should return nil

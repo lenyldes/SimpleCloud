@@ -1,6 +1,6 @@
 ## 1. Unit & Integration Tests for Hardened Seeding
 
-- [ ] 1.1 `[TEST-AGENT]` Write unit and integration tests in `services/storage-service/internal/auth/auth_db_test.go` verifying that `SeedAdminUser` skips seeding when `adminEmail` or `adminPassword` are empty, and successfully seeds when non-empty parameters are explicitly supplied.
+- [x] 1.1 `[TEST-AGENT]` Write unit and integration tests in `services/storage-service/internal/auth/auth_db_test.go` verifying that `SeedAdminUser` skips seeding when `adminEmail` or `adminPassword` are empty, and successfully seeds when non-empty parameters are explicitly supplied.
 
 ## 2. Go Backend Hardening Implementation
 
