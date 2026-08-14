@@ -35,9 +35,16 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [ ] Caddy reverse proxy integration (`cloud.lenyldes.ru` -> `localhost:32214`) with automatic Let's Encrypt HTTPS certificates.
 
 - [ ] **Phase 6: Advanced Features**
+  - [ ] Frontend Login & Auth Modal UI (automatic modal on 401 Unauthorized).
+  - [ ] Nested folder hierarchy navigation & path-based file browsing.
   - [ ] Simple text file editor (notepad in browser).
   - [ ] File and folder sharing with public links and read/read-write permissions.
   - [ ] Storage quota enforcement per user.
   - [ ] Automated file & folder expiration worker (`expires_at`).
   - [ ] Changelog API endpoint (`/api/v1/sync/changes`) for future desktop/mobile sync clients.
   - [ ] Custom SVG icons and refined UI design.
+
+- [ ] **Phase 7: Manual User Testing, Bugfixing & Product Polish**
+  - [ ] Guided User Manual Testing Protocol: `[ORCHESTRATOR-AGENT]` provides interactive step-by-step test instructions and report template for user feedback.
+  - [ ] User Bug Triage & Resolution: Implement targeted fixes for all user-reported UI/UX issues and edge cases.
+  - [ ] Final v1.0 Release Verification: End-to-end audit and release build ready for production use.
