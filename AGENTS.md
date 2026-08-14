@@ -46,16 +46,19 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 - **OpenSpec Transition Lifecycle:**
   1. `/openspec-explore` (Orchestrator) → Discusses architecture/IDEAS.md. When aligned with user, Orchestrator outputs a handoff prompt starting with ⚡ `/openspec-propose`.
   2. `/openspec-propose` (Orchestrator) → Creates OpenSpec change artifacts (`proposal.md`, `design.md`, `specs/`, `tasks.md`), then outputs a handoff prompt starting with ⚡ `/openspec-apply-change <change-name>` for `[TEST-AGENT]`.
-  3. ⚡ `/openspec-apply-change` (`[TEST-AGENT]`) → Loads OpenSpec tasks, writes RED failing tests (`*_test.go`), marks completed test tasks in `tasks.md`, then outputs a handoff prompt starting with ⚡ `/openspec-apply-change <change-name>` for `[CODE-AGENT]`.
-  4. ⚡ `/openspec-apply-change` (`[CODE-AGENT]`) → Loads OpenSpec tasks, writes GREEN implementation (`*.go`), marks completed impl tasks in `tasks.md`, then outputs a detailed audit handoff prompt for 💬 `[AUDIT-AGENT]`.
+  3. ⚡ `/openspec-apply-change` (`[TEST-AGENT]`) → Loads OpenSpec tasks, writes RED failing tests (`*_test.go`), marks completed test tasks in `tasks.md`, commits (`git commit`) and pushes (`git push origin main`), then outputs a handoff prompt starting with ⚡ `/openspec-apply-change <change-name>` for `[CODE-AGENT]`.
+  4. ⚡ `/openspec-apply-change` (`[CODE-AGENT]`) → Loads OpenSpec tasks, writes GREEN implementation (`*.go`), marks completed impl tasks in `tasks.md`, commits (`git commit`) and pushes (`git push origin main`), then outputs a detailed audit handoff prompt for 💬 `[AUDIT-AGENT]`.
   5. `[AUDIT-AGENT]` → Performs deep code review (reading `*.go` and `*_test.go`), verifies code cleanliness, security, test assertions, and runs `go test -cover ./...` & `gofmt`. If 100% green, approves phase and outputs handoff prompt starting with ⚡ `/openspec-archive-change` for Orchestrator.
-  6. `/openspec-archive-change` (Orchestrator) → Archives change to `openspec/changes/archive/`, syncs specs, updates `ROADMAP.md` checkboxes `- [x]`, and outputs handoff prompt starting with ⚡ `/openspec-explore` for the NEXT phase.
+  6. `/openspec-archive-change` (Orchestrator) → Archives change to `openspec/changes/archive/`, syncs specs, updates `ROADMAP.md` checkboxes `- [x]`, commits (`git commit`), pushes (`git push origin main`) to trigger CI/CD deploy, and outputs handoff prompt starting with ⚡ `/openspec-explore` for the NEXT phase.
 
 ---
 
 ## Git Commit Format & Rules
 
-Every task completion MUST be immediately committed to Git.
+Every task completion MUST be immediately committed to Git and pushed to the remote repository.
+
+### Automatic Git Push Policy
+Every agent that creates commits (`[TEST-AGENT]`, `[CODE-AGENT]`, `[ORCHESTRATOR-AGENT]`) MUST execute `git push origin main` immediately after committing changes. This guarantees remote repository synchronization and triggers the automated GitHub Actions CI/CD test and deployment pipeline.
 
 ### Commit Message Syntax
 All git commit messages MUST strictly follow the format:
