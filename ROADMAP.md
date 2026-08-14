@@ -48,6 +48,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Critical Quick Fixes & Port Hardening (Part 1 of Phase 7): fixed C5, C1, C3 in `phase7-critical-quick-fixes`.
   - [x] DB Metadata Persistence, Quotas Enforcement & Deletion Engine (Part 2 of Phase 7): fixed C2, C4, M8, H4, M7 in `phase7-db-metadata-quotas-deletion`.
   - [x] Remaining Audit Fixes from [`BUGS.md`](BUGS.md) (Part 3 of Phase 7): fixed H1-H3, H5, M1-M6, L1-L4 + fail-fast CI/CD in `phase7-hardening-and-polish`.
+  - [x] Final Code Cleanup & Technical Debt (Part 4 of Phase 7): fixed database `io/fs.FS` migrations (O2), RFC 5987 `Content-Disposition` (L5), and self-hosted Inter typography / CSP in `phase7-final-cleanup`.
   - [ ] Guided User Manual Testing Protocol: `[ORCHESTRATOR-AGENT]` provides interactive step-by-step test instructions and report template for user feedback.
   - [ ] User Bug Triage & Resolution: Implement targeted fixes for all user-reported UI/UX issues and edge cases.
   - [ ] Final v1.0 Release Verification: End-to-end audit and release build ready for production use.
@@ -58,7 +59,8 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [ ] Automated file & folder expiration worker (`expires_at`).
 
 - [ ] **Technical Debt & Backlog**
-  - [ ] `internal/database` statement coverage to 85%+ (O2): inject `fs.FS` into `RunMigrations` instead of the package-level `embed.FS` and test error/rollback branches with `fstest.MapFS` (deferred non-goal of `phase7-hardening-and-polish`; current coverage 71.4%).
-  - [ ] Google Fonts `<link>` in `index.html` is blocked by CSP `style-src 'self'` — self-host the fonts or remove the links (`phase7-hardening-and-polish` audit note).
-  - [ ] L5: `Content-Disposition` with RFC 5987 `filename*` for UTF-8 filenames (remaining `BUGS.md` finding).
+  - [x] `internal/database` statement coverage to 85%+ (O2): inject `fs.FS` into `RunMigrations` instead of package-level `embed.FS` and test error/rollback branches (`phase7-final-cleanup`).
+  - [x] Google Fonts `<link>` in `index.html` blocked by CSP `style-src 'self'`: self-host Inter typography font assets (`phase7-final-cleanup`).
+  - [x] L5: `Content-Disposition` with RFC 5987 `filename*` for UTF-8 filenames (`phase7-final-cleanup`).
+
 

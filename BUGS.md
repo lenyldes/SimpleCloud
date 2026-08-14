@@ -34,7 +34,7 @@
 | ✅ L2 (phase7-hardening-and-polish, 2026-08-14) | LOW | Повторная загрузка того же файла не работает (не сбрасывается `input.value`) | `services/web-frontend/src/app.js:626-632` |
 | ✅ L3 (phase7-hardening-and-polish, 2026-08-14) | LOW | Индикатор квоты считает только файлы корня | `services/web-frontend/src/app.js:259-280` |
 | ✅ L4 (phase7-hardening-and-polish, 2026-08-14) | LOW | `Dockerfile` не копирует `go.sum` до `go mod download` | `services/storage-service/Dockerfile:6` |
-| L5 | LOW | `Content-Disposition` без `filename*` (RFC 5987) для UTF-8 имён | `internal/handler/file.go:206` |
+| ✅ L5 (phase7-final-cleanup, 2026-08-14) | LOW | `Content-Disposition` без `filename*` (RFC 5987) для UTF-8 имён | `internal/handler/file.go:206` |
 
 ---
 
@@ -438,7 +438,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 ```
 
-### L5. Content-Disposition без filename* для UTF-8 имён
+### ✅ L5 (phase7-final-cleanup, 2026-08-14). Content-Disposition без filename* для UTF-8 имён
 
 **Где:** `internal/handler/file.go:206`.
 
