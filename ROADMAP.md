@@ -23,11 +23,11 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Session authentication using secure HTTP-only cookies (Web UI) with extensible middleware supporting `Authorization: Bearer`.
   - [x] Strict user isolation (`WHERE user_id = $1` on all SQL queries and handlers).
 
-- [ ] **Phase 4: Frontend Web UI (Vanilla JS)**
-  - [ ] Ultra-lightweight Vanilla HTML/CSS/JS frontend served via Go / Nginx container.
-  - [ ] File and folder grid/list views with breadcrumb navigation.
-  - [ ] Drag-and-Drop file & folder upload interface.
-  - [ ] File preview (text, images, video) and download capabilities.
+- [x] **Phase 4: Frontend Web UI (Vanilla JS)**
+  - [x] Ultra-lightweight Vanilla HTML/CSS/JS frontend served via Go / Nginx container.
+  - [x] File and folder grid/list views with breadcrumb navigation.
+  - [x] Drag-and-Drop file & folder upload interface.
+  - [x] File preview (text, images, video) and download capabilities.
 
 - [ ] **Phase 5: CI/CD & Deployment**
   - [ ] GitHub Actions workflow (`ci.yml`): Go linting (`golangci-lint`) and TDD automated test execution on PRs.
