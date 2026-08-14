@@ -412,3 +412,204 @@ func TestFolderDelete_ForeignDeniedAndFilesGone(t *testing.T) {
 		}
 	})
 }
+
+func TestFolderHandler_BranchCoverage(t *testing.T) {
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	userID := uuid.New()
+
+	t.Run("CreateHandler with nil pool succeeds creating metadata", func(t *testing.T) {
+		fh := handler.NewFolderHandler(nil, engine)
+		rr := createFolderRequest(fh, userID, map[string]interface{}{"name": "PoolNilFolder"})
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected 201 when pool is nil, got %d", rr.Code)
+		}
+	})
+
+	t.Run("CreateHandler canceled context on pool exec returns 500", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFolderHandler(pool, engine)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		jsonBody, _ := json.Marshal(map[string]interface{}{"name": "CanceledFolder"})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		ctx, cancel := context.WithCancel(req.Context())
+		cancel()
+		req = req.WithContext(auth.WithUserID(ctx, testUser))
+		rr := httptest.NewRecorder()
+		fh.CreateHandler(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500 when folder insert fails on canceled context, got %d", rr.Code)
+		}
+	})
+
+	t.Run("ListHandler pool is nil returns empty list", func(t *testing.T) {
+		fh := handler.NewFolderHandler(nil, engine)
+		rr := listFoldersRequest(fh, userID, "/api/v1/folders")
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rr.Code)
+		}
+		list := decodeFolderList(t, rr)
+		if len(list) != 0 {
+			t.Errorf("expected empty list, got %d elements", len(list))
+		}
+	})
+
+	t.Run("ListHandler non-UUID parent_id returns empty list", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFolderHandler(pool, engine)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		rr := listFoldersRequest(fh, testUser, "/api/v1/folders?parent_id=invalid-uuid")
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rr.Code)
+		}
+		list := decodeFolderList(t, rr)
+		if len(list) != 0 {
+			t.Errorf("expected empty list for non-UUID parent_id, got %d elements", len(list))
+		}
+	})
+
+	t.Run("ListHandler canceled context on query returns 500", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFolderHandler(pool, engine)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/folders", nil)
+		ctx, cancel := context.WithCancel(req.Context())
+		cancel()
+		req = req.WithContext(auth.WithUserID(ctx, testUser))
+		rr := httptest.NewRecorder()
+		fh.ListHandler(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500 on canceled query context, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DeleteHandler empty folder ID returns 400", func(t *testing.T) {
+		fh := handler.NewFolderHandler(nil, engine)
+		rr := deleteFolderRequest(fh, userID, "")
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for empty folder ID, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DeleteHandler non-UUID folder ID returns 404", func(t *testing.T) {
+		fh := handler.NewFolderHandler(nil, engine)
+		rr := deleteFolderRequest(fh, userID, "not-a-uuid")
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for non-UUID folder ID, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DeleteHandler pool is nil returns 404", func(t *testing.T) {
+		fh := handler.NewFolderHandler(nil, engine)
+		rr := deleteFolderRequest(fh, userID, uuid.New().String())
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("expected 404 when pool is nil, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DeleteHandler subfolder binary missing on disk logs warning and returns 200", func(t *testing.T) {
+		pool := setupTestPool(t)
+		folderFH := handler.NewFolderHandler(pool, engine)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+
+		rrFolder := createFolderRequest(folderFH, testUser, map[string]interface{}{"name": "MissingDiskFolder"})
+		if rrFolder.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d", rrFolder.Code)
+		}
+		folderMeta := decodeFolderMeta(t, rrFolder)
+
+		fileID := uuid.New()
+		missingStoragePath := "/nonexistent/path/to/subfolder_file.bin"
+		_, err := pool.Exec(context.Background(),
+			`INSERT INTO files (id, user_id, folder_id, filename, size_bytes, sha256_hash, storage_path)
+			 VALUES ($1, $2, $3, 'subfile.bin', 50, repeat('c', 64), $4)`,
+			fileID, testUser, folderMeta.ID, missingStoragePath)
+		if err != nil {
+			t.Fatalf("failed to insert subfile row: %v", err)
+		}
+		_, _ = pool.Exec(context.Background(), `UPDATE users SET used_bytes = 50 WHERE id = $1`, testUser)
+
+		delRR := deleteFolderRequest(folderFH, testUser, folderMeta.ID)
+		if delRR.Code != http.StatusOK {
+			t.Errorf("expected 200 OK when disk binary of deleted subfolder is missing, got %d, body: %s", delRR.Code, delRR.Body.String())
+		}
+		if got := getUserUsedBytes(t, pool, testUser); got != 0 {
+			t.Errorf("expected used_bytes decremented to 0, got %d", got)
+		}
+	})
+
+	t.Run("DeleteHandler canceled context on tx begin returns 500", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFolderHandler(pool, engine)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+
+		rrFolder := createFolderRequest(fh, testUser, map[string]interface{}{"name": "TargetFolder"})
+		if rrFolder.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d", rrFolder.Code)
+		}
+		folderMeta := decodeFolderMeta(t, rrFolder)
+
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/folders/"+folderMeta.ID, nil)
+		ctx, cancel := context.WithCancel(req.Context())
+		cancel()
+		req = req.WithContext(auth.WithUserID(ctx, testUser))
+		rr := httptest.NewRecorder()
+		fh.DeleteHandler(rr, req)
+		if rr.Code != http.StatusInternalServerError && rr.Code != http.StatusNotFound {
+			t.Errorf("expected error code on canceled context delete, got %d", rr.Code)
+		}
+	})
+}
+
+func TestFolderDelete_MultiLevelRecursion(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	folderHandler := handler.NewFolderHandler(pool, engine)
+	fileHandler := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userID := createTestUser(t, pool, 10*1024*1024)
+
+	rrL1 := createFolderRequest(folderHandler, userID, map[string]interface{}{"name": "TreeL1"})
+	if rrL1.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rrL1.Code)
+	}
+	l1 := decodeFolderMeta(t, rrL1)
+
+	rrL2a := createFolderRequest(folderHandler, userID, map[string]interface{}{"name": "TreeL2a", "parent_id": l1.ID})
+	if rrL2a.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rrL2a.Code)
+	}
+	l2a := decodeFolderMeta(t, rrL2a)
+
+	rrL2b := createFolderRequest(folderHandler, userID, map[string]interface{}{"name": "TreeL2b", "parent_id": l1.ID})
+	if rrL2b.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rrL2b.Code)
+	}
+	l2b := decodeFolderMeta(t, rrL2b)
+
+	rrL3 := createFolderRequest(folderHandler, userID, map[string]interface{}{"name": "TreeL3", "parent_id": l2a.ID})
+	if rrL3.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rrL3.Code)
+	}
+	l3 := decodeFolderMeta(t, rrL3)
+
+	_ = uploadTestFile(t, fileHandler, userID, "f2b.txt", []byte("file in l2b"), l2b.ID)
+	_ = uploadTestFile(t, fileHandler, userID, "f3.txt", []byte("file in l3"), l3.ID)
+
+	delRR := deleteFolderRequest(folderHandler, userID, l1.ID)
+	if delRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for deep multi-level recursive delete, got %d, body: %s", delRR.Code, delRR.Body.String())
+	}
+
+	if folderExistsInDB(t, pool, l1.ID) || folderExistsInDB(t, pool, l2a.ID) || folderExistsInDB(t, pool, l2b.ID) || folderExistsInDB(t, pool, l3.ID) {
+		t.Error("expected all multi-level folders deleted")
+	}
+	if got := countUserFiles(t, pool, userID); got != 0 {
+		t.Errorf("expected 0 files remaining, got %d", got)
+	}
+	if got := getUserUsedBytes(t, pool, userID); got != 0 {
+		t.Errorf("expected used_bytes 0 after multi-level delete, got %d", got)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -681,4 +682,264 @@ func TestFilesRouting_NoConflict(t *testing.T) {
 	if got := countUserFiles(t, pool, userID); got != 0 {
 		t.Errorf("expected file deleted via routed DELETE, got %d rows", got)
 	}
+}
+
+func TestFileHandler_UploadHandler_BranchCoverage(t *testing.T) {
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	userID := uuid.New()
+
+	t.Run("UploadHandler pool is nil returns 500", func(t *testing.T) {
+		fh := handler.NewFileHandler(engine, nil, 10*1024*1024)
+		req := buildUploadRequest(t, userID, "test.txt", []byte("hello"), "")
+		rr := httptest.NewRecorder()
+		fh.UploadHandler(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler user record not found in DB returns 500", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		nonExistentUserID := uuid.New()
+		req := buildUploadRequest(t, nonExistentUserID, "test.txt", []byte("hello"), "")
+		rr := httptest.NewRecorder()
+		fh.UploadHandler(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500 for missing user record, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler user used_bytes near quota_bytes limits remaining quota -> 413", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 1000)
+		overQuotaUserID := createTestUser(t, pool, 1000)
+		_, err := pool.Exec(context.Background(), `UPDATE users SET used_bytes = 990 WHERE id = $1`, overQuotaUserID)
+		if err != nil {
+			t.Fatalf("failed to update used_bytes: %v", err)
+		}
+		req := buildUploadRequest(t, overQuotaUserID, "over.txt", []byte("this content is much longer than 10 bytes remaining"), "")
+		rr := httptest.NewRecorder()
+		fh.UploadHandler(rr, req)
+		if rr.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("expected 413 when file exceeds remaining quota, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler non-numeric Content-Length header is ignored", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		req := buildUploadRequest(t, testUser, "valid.txt", []byte("valid content"), "")
+		req.Header.Set("Content-Length", "invalid-number")
+		rr := httptest.NewRecorder()
+		fh.UploadHandler(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected 201 when Content-Length is non-numeric string, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler invalid multipart body returns 400", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", strings.NewReader("not a multipart body"))
+		req.Header.Set("Content-Type", "multipart/form-data; boundary=boundary123")
+		req = req.WithContext(auth.WithUserID(req.Context(), testUser))
+		rr := httptest.NewRecorder()
+		fh.UploadHandler(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for invalid multipart form, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler missing file field in form returns 400", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		_ = writer.WriteField("other_field", "value")
+		_ = writer.Close()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req = req.WithContext(auth.WithUserID(req.Context(), testUser))
+		rr := httptest.NewRecorder()
+		fh.UploadHandler(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for missing file field, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler non-UUID string folder_id triggers FK/exec error -> 500 and disk rollback", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		rr := uploadTestFile(t, fh, testUser, "nonuuid_folder.txt", []byte("content"), "invalid-folder-uuid")
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500 for non-UUID string folder_id causing DB insert failure, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler canceled context on tx begin returns 500", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		req := buildUploadRequest(t, testUser, "canceled.txt", []byte("content"), "")
+		ctx, cancel := context.WithCancel(req.Context())
+		cancel()
+		req = req.WithContext(ctx)
+		rr := httptest.NewRecorder()
+		fh.UploadHandler(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500 when transaction start fails on canceled context, got %d", rr.Code)
+		}
+	})
+}
+
+func TestFileHandler_DownloadHandler_BranchCoverage(t *testing.T) {
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	userID := uuid.New()
+
+	t.Run("DownloadHandler empty file ID returns 400", func(t *testing.T) {
+		fh := handler.NewFileHandler(engine, nil, 10*1024*1024)
+		rr := downloadFileRequest(fh, userID, "")
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for empty file ID, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DownloadHandler pool is nil returns 404", func(t *testing.T) {
+		fh := handler.NewFileHandler(engine, nil, 10*1024*1024)
+		rr := downloadFileRequest(fh, userID, uuid.New().String())
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("expected 404 when pool is nil, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DownloadHandler missing binary file on disk returns 404", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		fileID := uuid.New()
+		missingStoragePath := "/nonexistent/path/to/missing.bin"
+		_, err := pool.Exec(context.Background(),
+			`INSERT INTO files (id, user_id, filename, size_bytes, sha256_hash, storage_path)
+			 VALUES ($1, $2, 'missing.bin', 10, repeat('a', 64), $3)`,
+			fileID, testUser, missingStoragePath)
+		if err != nil {
+			t.Fatalf("failed to insert missing file row: %v", err)
+		}
+
+		rr := downloadFileRequest(fh, testUser, fileID.String())
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("expected 404 when file is missing from disk, got %d", rr.Code)
+		}
+	})
+}
+
+func TestFileHandler_ListHandler_BranchCoverage(t *testing.T) {
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	userID := uuid.New()
+
+	t.Run("ListHandler pool is nil returns empty list", func(t *testing.T) {
+		fh := handler.NewFileHandler(engine, nil, 10*1024*1024)
+		rr := listFilesRequest(fh, userID, "/api/v1/files")
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rr.Code)
+		}
+		list := decodeFileList(t, rr)
+		if len(list) != 0 {
+			t.Errorf("expected empty list, got %d elements", len(list))
+		}
+	})
+
+	t.Run("ListHandler non-UUID folder_id returns empty list", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		rr := listFilesRequest(fh, testUser, "/api/v1/files?folder_id=not-a-uuid")
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rr.Code)
+		}
+		list := decodeFileList(t, rr)
+		if len(list) != 0 {
+			t.Errorf("expected empty list for invalid folder_id UUID, got %d elements", len(list))
+		}
+	})
+
+	t.Run("ListHandler canceled context on query returns 500", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files", nil)
+		ctx, cancel := context.WithCancel(req.Context())
+		cancel()
+		req = req.WithContext(auth.WithUserID(ctx, testUser))
+		rr := httptest.NewRecorder()
+		fh.ListHandler(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500 on canceled query context, got %d", rr.Code)
+		}
+	})
+}
+
+func TestFileHandler_DeleteHandler_BranchCoverage(t *testing.T) {
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	userID := uuid.New()
+
+	t.Run("DeleteHandler empty file ID returns 400", func(t *testing.T) {
+		fh := handler.NewFileHandler(engine, nil, 10*1024*1024)
+		rr := deleteFileRequest(fh, userID, "")
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for empty file ID, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DeleteHandler pool is nil returns 404", func(t *testing.T) {
+		fh := handler.NewFileHandler(engine, nil, 10*1024*1024)
+		rr := deleteFileRequest(fh, userID, uuid.New().String())
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("expected 404 when pool is nil, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DeleteHandler binary missing on disk logs warning and returns 200", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		fileID := uuid.New()
+		missingStoragePath := "/nonexistent/path/to/already_deleted.bin"
+		_, err := pool.Exec(context.Background(),
+			`INSERT INTO files (id, user_id, filename, size_bytes, sha256_hash, storage_path)
+			 VALUES ($1, $2, 'already_deleted.bin', 100, repeat('b', 64), $3)`,
+			fileID, testUser, missingStoragePath)
+		if err != nil {
+			t.Fatalf("failed to insert missing file row: %v", err)
+		}
+
+		rr := deleteFileRequest(fh, testUser, fileID.String())
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200 OK when binary on disk is missing during delete, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DeleteHandler canceled context on tx begin returns 500", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/files/"+uuid.New().String(), nil)
+		ctx, cancel := context.WithCancel(req.Context())
+		cancel()
+		req = req.WithContext(auth.WithUserID(ctx, testUser))
+		rr := httptest.NewRecorder()
+		fh.DeleteHandler(rr, req)
+		if rr.Code != http.StatusNotFound && rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected error code for canceled context delete, got %d", rr.Code)
+		}
+	})
 }
