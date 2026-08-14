@@ -1,7 +1,7 @@
 ## 1. Test Agent Tasks (RED State)
 
-- [ ] 1.1 Add automated integration tests for Nginx security headers (`X-Frame-Options`, `Content-Security-Policy`, etc.) in `web_test.go`
-- [ ] 1.2 Add automated integration tests for Nginx rate limiting response (`HTTP 429`) under rapid requests in `web_test.go`
+- [x] 1.1 Add automated integration tests for Nginx security headers (`X-Frame-Options`, `Content-Security-Policy`, etc.) in `web_test.go`
+- [x] 1.2 Add automated integration tests for Nginx rate limiting response (`HTTP 429`) under rapid requests in `web_test.go`
 
 ## 2. Code Implementation Tasks (GREEN State)
 
