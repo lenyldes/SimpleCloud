@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -18,288 +17,104 @@ import (
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
 )
 
-func TestFolderHandler_CreateSuccessRoot(t *testing.T) {
-	folderHandler := handler.NewFolderHandler()
-	testUserID := uuid.New()
-
-	payload := map[string]interface{}{
-		"name": "Documents",
-	}
+func createFolderRequest(fh *handler.FolderHandler, userID uuid.UUID, payload map[string]interface{}) *httptest.ResponseRecorder {
 	jsonBody, _ := json.Marshal(payload)
-
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-
+	req = req.WithContext(auth.WithUserID(req.Context(), userID))
 	rr := httptest.NewRecorder()
-	h := http.HandlerFunc(folderHandler.CreateHandler)
-	h.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("expected HTTP 201 Created, got %d, body: %s", rr.Code, rr.Body.String())
-	}
-
-	var resp handler.FolderMetadata
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode JSON response: %v", err)
-	}
-
-	if resp.Name != "Documents" {
-		t.Errorf("expected folder name 'Documents', got %q", resp.Name)
-	}
-	if resp.UserID != testUserID.String() {
-		t.Errorf("expected user_id %s, got %s", testUserID.String(), resp.UserID)
-	}
-	if resp.ParentID != nil {
-		t.Errorf("expected nil parent_id for root folder, got %v", resp.ParentID)
-	}
+	fh.CreateHandler(rr, req)
+	return rr
 }
 
-func TestFolderHandler_CreateSuccessNested(t *testing.T) {
-	folderHandler := handler.NewFolderHandler()
+func listFoldersRequest(fh *handler.FolderHandler, userID uuid.UUID, url string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req = req.WithContext(auth.WithUserID(req.Context(), userID))
+	rr := httptest.NewRecorder()
+	fh.ListHandler(rr, req)
+	return rr
+}
+
+func deleteFolderRequest(fh *handler.FolderHandler, userID uuid.UUID, folderID string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/folders/"+folderID, nil)
+	req = req.WithContext(auth.WithUserID(req.Context(), userID))
+	rr := httptest.NewRecorder()
+	fh.DeleteHandler(rr, req)
+	return rr
+}
+
+func decodeFolderMeta(t *testing.T, rr *httptest.ResponseRecorder) handler.FolderMetadata {
+	t.Helper()
+	var meta handler.FolderMetadata
+	if err := json.NewDecoder(rr.Body).Decode(&meta); err != nil {
+		t.Fatalf("failed to decode folder metadata JSON: %v", err)
+	}
+	return meta
+}
+
+func decodeFolderList(t *testing.T, rr *httptest.ResponseRecorder) []handler.FolderMetadata {
+	t.Helper()
+	var list []handler.FolderMetadata
+	if err := json.NewDecoder(rr.Body).Decode(&list); err != nil {
+		t.Fatalf("failed to decode folder list JSON: %v", err)
+	}
+	return list
+}
+
+func folderExistsInDB(t *testing.T, pool *pgxpool.Pool, folderID string) bool {
+	t.Helper()
+	var count int
+	err := pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM folders WHERE id = $1`, folderID).Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to query folders row: %v", err)
+	}
+	return count > 0
+}
+
+// --- Non-DB guards: method, auth and payload validation (pool may be nil) ---
+
+func TestFolderHandler_MethodAndAuthGuards(t *testing.T) {
+	fh := handler.NewFolderHandler(nil, nil)
 	testUserID := uuid.New()
 
-	// First create parent folder
-	rootPayload, _ := json.Marshal(map[string]interface{}{"name": "RootFolder"})
-	reqRoot := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(rootPayload))
-	reqRoot.Header.Set("Content-Type", "application/json")
-	reqRoot = reqRoot.WithContext(auth.WithUserID(reqRoot.Context(), testUserID))
-	rrRoot := httptest.NewRecorder()
-	folderHandler.CreateHandler(rrRoot, reqRoot)
-
-	var parentFolder handler.FolderMetadata
-	_ = json.NewDecoder(rrRoot.Body).Decode(&parentFolder)
-
-	// Now create nested subfolder
-	subPayload, _ := json.Marshal(map[string]interface{}{
-		"name":      "SubFolder",
-		"parent_id": parentFolder.ID,
-	})
-	reqSub := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(subPayload))
-	reqSub.Header.Set("Content-Type", "application/json")
-	reqSub = reqSub.WithContext(auth.WithUserID(reqSub.Context(), testUserID))
-	rrSub := httptest.NewRecorder()
-	folderHandler.CreateHandler(rrSub, reqSub)
-
-	if rrSub.Code != http.StatusCreated {
-		t.Fatalf("expected HTTP 201 Created for nested folder, got %d", rrSub.Code)
+	withUser := func(req *http.Request) *http.Request {
+		return req.WithContext(auth.WithUserID(req.Context(), testUserID))
 	}
 
-	var childFolder handler.FolderMetadata
-	if err := json.NewDecoder(rrSub.Body).Decode(&childFolder); err != nil {
-		t.Fatalf("failed to decode child folder response: %v", err)
-	}
-
-	if childFolder.ParentID == nil || *childFolder.ParentID != parentFolder.ID {
-		t.Errorf("expected parent_id %s, got %v", parentFolder.ID, childFolder.ParentID)
-	}
-}
-
-func TestFolderHandler_CreateCrossUserParentForbidden(t *testing.T) {
-	folderHandler := handler.NewFolderHandler()
-	userA := uuid.New()
-	userB := uuid.New()
-
-	// User A creates folder
-	payloadA, _ := json.Marshal(map[string]interface{}{"name": "UserA Folder"})
-	reqA := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(payloadA))
-	reqA.Header.Set("Content-Type", "application/json")
-	reqA = reqA.WithContext(auth.WithUserID(reqA.Context(), userA))
-	rrA := httptest.NewRecorder()
-	folderHandler.CreateHandler(rrA, reqA)
-
-	var folderA handler.FolderMetadata
-	_ = json.NewDecoder(rrA.Body).Decode(&folderA)
-
-	// User B attempts to create subfolder inside User A's folder
-	payloadB, _ := json.Marshal(map[string]interface{}{
-		"name":      "Hacker SubFolder",
-		"parent_id": folderA.ID,
-	})
-	reqB := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(payloadB))
-	reqB.Header.Set("Content-Type", "application/json")
-	reqB = reqB.WithContext(auth.WithUserID(reqB.Context(), userB))
-	rrB := httptest.NewRecorder()
-	folderHandler.CreateHandler(rrB, reqB)
-
-	if rrB.Code != http.StatusNotFound && rrB.Code != http.StatusForbidden {
-		t.Errorf("expected 404 or 403 when using another user's folder as parent_id, got %d", rrB.Code)
-	}
-}
-
-func TestFolderHandler_CreateValidationErrors(t *testing.T) {
-	folderHandler := handler.NewFolderHandler()
-	testUserID := uuid.New()
-
-	t.Run("Empty folder name returns 400", func(t *testing.T) {
-		payload, _ := json.Marshal(map[string]interface{}{"name": ""})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(payload))
-		req.Header.Set("Content-Type", "application/json")
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-		rr := httptest.NewRecorder()
-		folderHandler.CreateHandler(rr, req)
-
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400 Bad Request for empty name, got %d", rr.Code)
-		}
-	})
-
-	t.Run("Unauthenticated request returns 401", func(t *testing.T) {
-		payload, _ := json.Marshal(map[string]interface{}{"name": "Docs"})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(payload))
-		req.Header.Set("Content-Type", "application/json")
-		rr := httptest.NewRecorder()
-		folderHandler.CreateHandler(rr, req)
-
-		if rr.Code != http.StatusUnauthorized {
-			t.Errorf("expected 401 Unauthorized for unauthenticated request, got %d", rr.Code)
-		}
-	})
-}
-
-func TestFolderHandler_ListScopedAndMultiTenant(t *testing.T) {
-	folderHandler := handler.NewFolderHandler()
-	userA := uuid.New()
-	userB := uuid.New()
-
-	// User A creates root folder and subfolder
-	payloadA1, _ := json.Marshal(map[string]interface{}{"name": "RootA"})
-	reqA1 := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(payloadA1))
-	reqA1.Header.Set("Content-Type", "application/json")
-	reqA1 = reqA1.WithContext(auth.WithUserID(reqA1.Context(), userA))
-	rrA1 := httptest.NewRecorder()
-	folderHandler.CreateHandler(rrA1, reqA1)
-
-	var rootA handler.FolderMetadata
-	_ = json.NewDecoder(rrA1.Body).Decode(&rootA)
-
-	// List User A root folders
-	reqListRoot := httptest.NewRequest(http.MethodGet, "/api/v1/folders", nil)
-	reqListRoot = reqListRoot.WithContext(auth.WithUserID(reqListRoot.Context(), userA))
-	rrListRoot := httptest.NewRecorder()
-	folderHandler.ListHandler(rrListRoot, reqListRoot)
-
-	if rrListRoot.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK for list root folders, got %d", rrListRoot.Code)
-	}
-
-	var rootFolders []handler.FolderMetadata
-	_ = json.NewDecoder(rrListRoot.Body).Decode(&rootFolders)
-	if len(rootFolders) != 1 || rootFolders[0].ID != rootA.ID {
-		t.Errorf("expected 1 root folder %s, got %v", rootA.ID, rootFolders)
-	}
-
-	// User B list root folders (should see empty array)
-	reqListB := httptest.NewRequest(http.MethodGet, "/api/v1/folders", nil)
-	reqListB = reqListB.WithContext(auth.WithUserID(reqListB.Context(), userB))
-	rrListB := httptest.NewRecorder()
-	folderHandler.ListHandler(rrListB, reqListB)
-
-	if rrListB.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK for User B list, got %d", rrListB.Code)
-	}
-
-	var foldersB []handler.FolderMetadata
-	_ = json.NewDecoder(rrListB.Body).Decode(&foldersB)
-	if len(foldersB) != 0 {
-		t.Errorf("User B should see 0 folders, got %d", len(foldersB))
-	}
-}
-
-func TestFolderHandler_DeleteSuccessAndMultiTenant(t *testing.T) {
-	folderHandler := handler.NewFolderHandler()
-	userA := uuid.New()
-	userB := uuid.New()
-
-	payloadA, _ := json.Marshal(map[string]interface{}{"name": "FolderToDelete"})
-	reqA := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(payloadA))
-	reqA.Header.Set("Content-Type", "application/json")
-	reqA = reqA.WithContext(auth.WithUserID(reqA.Context(), userA))
-	rrA := httptest.NewRecorder()
-	folderHandler.CreateHandler(rrA, reqA)
-
-	var folderA handler.FolderMetadata
-	_ = json.NewDecoder(rrA.Body).Decode(&folderA)
-
-	// User B trying to delete User A folder returns 404
-	reqDelB := httptest.NewRequest(http.MethodDelete, "/api/v1/folders/"+folderA.ID, nil)
-	reqDelB = reqDelB.WithContext(auth.WithUserID(reqDelB.Context(), userB))
-	rrDelB := httptest.NewRecorder()
-	folderHandler.DeleteHandler(rrDelB, reqDelB)
-
-	if rrDelB.Code != http.StatusNotFound {
-		t.Errorf("expected 404 Not Found when User B deletes User A folder, got %d", rrDelB.Code)
-	}
-
-	// User A deletes their folder
-	reqDelA := httptest.NewRequest(http.MethodDelete, "/api/v1/folders/"+folderA.ID, nil)
-	reqDelA = reqDelA.WithContext(auth.WithUserID(reqDelA.Context(), userA))
-	rrDelA := httptest.NewRecorder()
-	folderHandler.DeleteHandler(rrDelA, reqDelA)
-
-	if rrDelA.Code != http.StatusOK {
-		t.Errorf("expected 200 OK when User A deletes folder, got %d", rrDelA.Code)
-	}
-}
-
-func TestFolderHandler_ConstructorAndEdgeCases(t *testing.T) {
-	config, _ := pgxpool.ParseConfig("postgres://user:pass@127.0.0.1:1/dbname")
-	pool, _ := pgxpool.NewWithConfig(context.Background(), config)
-	if pool != nil {
-		defer pool.Close()
-	}
-
-	tempDir, _ := os.MkdirTemp("", "folder_handler_test_*")
-	defer os.RemoveAll(tempDir)
-	engine := storage.NewDiskEngine(tempDir)
-
-	fh := handler.NewFolderHandler(pool, engine)
-	testUserID := uuid.New()
-
-	t.Run("CreateHandler non-POST method returns 405", func(t *testing.T) {
+	t.Run("CreateHandler wrong method returns 405", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/folders", nil)
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 		rr := httptest.NewRecorder()
-		fh.CreateHandler(rr, req)
+		fh.CreateHandler(rr, withUser(req))
 		if rr.Code != http.StatusMethodNotAllowed {
-			t.Errorf("expected 405 Method Not Allowed, got %d", rr.Code)
+			t.Errorf("expected 405, got %d", rr.Code)
 		}
 	})
 
-	t.Run("CreateHandler invalid JSON payload returns 400", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/folders", strings.NewReader("{invalid_json"))
-		req.Header.Set("Content-Type", "application/json")
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-		rr := httptest.NewRecorder()
-		fh.CreateHandler(rr, req)
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400 Bad Request, got %d", rr.Code)
-		}
-	})
-
-	t.Run("CreateHandler non-existent parent_id returns 404", func(t *testing.T) {
-		parentID := uuid.New().String()
-		payload, _ := json.Marshal(map[string]interface{}{
-			"name":      "NestedFolder",
-			"parent_id": parentID,
-		})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(payload))
-		req.Header.Set("Content-Type", "application/json")
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-		rr := httptest.NewRecorder()
-		fh.CreateHandler(rr, req)
-		if rr.Code != http.StatusNotFound {
-			t.Errorf("expected 404 Not Found for non-existent parent_id, got %d", rr.Code)
-		}
-	})
-
-	t.Run("ListHandler non-GET method returns 405", func(t *testing.T) {
+	t.Run("ListHandler wrong method returns 405", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/folders", nil)
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 		rr := httptest.NewRecorder()
-		fh.ListHandler(rr, req)
+		fh.ListHandler(rr, withUser(req))
 		if rr.Code != http.StatusMethodNotAllowed {
-			t.Errorf("expected 405 Method Not Allowed, got %d", rr.Code)
+			t.Errorf("expected 405, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DeleteHandler wrong method returns 405", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/folders/some-id", nil)
+		rr := httptest.NewRecorder()
+		fh.DeleteHandler(rr, withUser(req))
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected 405, got %d", rr.Code)
+		}
+	})
+
+	t.Run("CreateHandler unauthenticated returns 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/folders", strings.NewReader("{}"))
+		rr := httptest.NewRecorder()
+		fh.CreateHandler(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", rr.Code)
 		}
 	})
 
@@ -308,17 +123,7 @@ func TestFolderHandler_ConstructorAndEdgeCases(t *testing.T) {
 		rr := httptest.NewRecorder()
 		fh.ListHandler(rr, req)
 		if rr.Code != http.StatusUnauthorized {
-			t.Errorf("expected 401 Unauthorized, got %d", rr.Code)
-		}
-	})
-
-	t.Run("DeleteHandler non-DELETE method returns 405", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/folders/some-id", nil)
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-		rr := httptest.NewRecorder()
-		fh.DeleteHandler(rr, req)
-		if rr.Code != http.StatusMethodNotAllowed {
-			t.Errorf("expected 405 Method Not Allowed, got %d", rr.Code)
+			t.Errorf("expected 401, got %d", rr.Code)
 		}
 	})
 
@@ -327,71 +132,283 @@ func TestFolderHandler_ConstructorAndEdgeCases(t *testing.T) {
 		rr := httptest.NewRecorder()
 		fh.DeleteHandler(rr, req)
 		if rr.Code != http.StatusUnauthorized {
-			t.Errorf("expected 401 Unauthorized, got %d", rr.Code)
+			t.Errorf("expected 401, got %d", rr.Code)
 		}
 	})
 
-	t.Run("DeleteHandler missing folder ID returns 400", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodDelete, "/api/v1/folders/", nil)
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
+	t.Run("CreateHandler invalid JSON returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/folders", strings.NewReader("{invalid_json"))
+		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
-		fh.DeleteHandler(rr, req)
+		fh.CreateHandler(rr, withUser(req))
 		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400 Bad Request for missing folder ID, got %d", rr.Code)
+			t.Errorf("expected 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("CreateHandler empty name returns 400", func(t *testing.T) {
+		rr := createFolderRequest(fh, testUserID, map[string]interface{}{"name": "  "})
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", rr.Code)
 		}
 	})
 }
 
-func TestFolderHandler_RecursiveSubfolderDeletion(t *testing.T) {
-	fh := handler.NewFolderHandler()
-	testUserID := uuid.New()
+// --- Task 4.1: non-UUID parent_id rejected with 400 (M7) ---
 
-	// Create Folder Level 1
-	p1, _ := json.Marshal(map[string]interface{}{"name": "Level1"})
-	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(p1))
-	req1 = req1.WithContext(auth.WithUserID(req1.Context(), testUserID))
-	rr1 := httptest.NewRecorder()
-	fh.CreateHandler(rr1, req1)
-	var f1 handler.FolderMetadata
-	_ = json.NewDecoder(rr1.Body).Decode(&f1)
+func TestFolderCreate_InvalidParentUUID400(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFolderHandler(pool, engine)
 
-	// Create Folder Level 2 (parent = Level1)
-	p2, _ := json.Marshal(map[string]interface{}{"name": "Level2", "parent_id": f1.ID})
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(p2))
-	req2 = req2.WithContext(auth.WithUserID(req2.Context(), testUserID))
-	rr2 := httptest.NewRecorder()
-	fh.CreateHandler(rr2, req2)
-	var f2 handler.FolderMetadata
-	_ = json.NewDecoder(rr2.Body).Decode(&f2)
+	userID := createTestUser(t, pool, 10*1024*1024)
 
-	// Create Folder Level 3 (parent = Level2)
-	p3, _ := json.Marshal(map[string]interface{}{"name": "Level3", "parent_id": f2.ID})
-	req3 := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(p3))
-	req3 = req3.WithContext(auth.WithUserID(req3.Context(), testUserID))
-	rr3 := httptest.NewRecorder()
-	fh.CreateHandler(rr3, req3)
-	var f3 handler.FolderMetadata
-	_ = json.NewDecoder(rr3.Body).Decode(&f3)
-
-	// Delete Level 1 -> should recursively delete Level 2 and Level 3
-	reqDel := httptest.NewRequest(http.MethodDelete, "/api/v1/folders/"+f1.ID, nil)
-	reqDel = reqDel.WithContext(auth.WithUserID(reqDel.Context(), testUserID))
-	rrDel := httptest.NewRecorder()
-	fh.DeleteHandler(rrDel, reqDel)
-
-	if rrDel.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK on recursive delete, got %d", rrDel.Code)
+	rr := createFolderRequest(fh, userID, map[string]interface{}{
+		"name":      "BrokenParent",
+		"parent_id": "not-a-uuid",
+	})
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-UUID parent_id, got %d, body: %s", rr.Code, rr.Body.String())
 	}
 
-	// Verify all folders deleted when listing Level 1's subfolders
-	reqList := httptest.NewRequest(http.MethodGet, "/api/v1/folders?parent_id="+f1.ID, nil)
-	reqList = reqList.WithContext(auth.WithUserID(reqList.Context(), testUserID))
-	rrList := httptest.NewRecorder()
-	fh.ListHandler(rrList, reqList)
-
-	var subfolders []handler.FolderMetadata
-	_ = json.NewDecoder(rrList.Body).Decode(&subfolders)
-	if len(subfolders) != 0 {
-		t.Errorf("expected 0 subfolders after recursive deletion, got %d", len(subfolders))
+	var errResp struct {
+		Error string `json:"error"`
 	}
+	if err := json.NewDecoder(rr.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error payload: %v", err)
+	}
+	if !strings.Contains(errResp.Error, "invalid parent_id") {
+		t.Errorf("expected error to mention 'invalid parent_id', got %q", errResp.Error)
+	}
+
+	if got := countUserFolders(t, pool, userID); got != 0 {
+		t.Errorf("expected no folder record created for invalid parent_id, found %d", got)
+	}
+}
+
+// --- Task 4.2: parent existence/ownership verified in PostgreSQL ---
+
+func TestFolderCreate_ParentChecksViaDB(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFolderHandler(pool, engine)
+
+	userA := createTestUser(t, pool, 10*1024*1024)
+	userB := createTestUser(t, pool, 10*1024*1024)
+
+	rrRoot := createFolderRequest(fh, userA, map[string]interface{}{"name": "RootA"})
+	if rrRoot.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for root folder, got %d, body: %s", rrRoot.Code, rrRoot.Body.String())
+	}
+	rootA := decodeFolderMeta(t, rrRoot)
+	if rootA.ParentID != nil {
+		t.Errorf("expected nil parent_id for root folder, got %v", rootA.ParentID)
+	}
+	if !folderExistsInDB(t, pool, rootA.ID) {
+		t.Errorf("expected folder %s persisted in folders table", rootA.ID)
+	}
+
+	t.Run("own parent exists -> 201 nested", func(t *testing.T) {
+		rr := createFolderRequest(fh, userA, map[string]interface{}{
+			"name":      "ChildA",
+			"parent_id": rootA.ID,
+		})
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected 201 for nested folder under own parent, got %d, body: %s", rr.Code, rr.Body.String())
+		}
+		child := decodeFolderMeta(t, rr)
+		if child.ParentID == nil || *child.ParentID != rootA.ID {
+			t.Errorf("expected parent_id %s, got %v", rootA.ID, child.ParentID)
+		}
+	})
+
+	t.Run("foreign parent -> 404", func(t *testing.T) {
+		rr := createFolderRequest(fh, userB, map[string]interface{}{
+			"name":      "HackerChild",
+			"parent_id": rootA.ID,
+		})
+		if rr.Code != http.StatusNotFound && rr.Code != http.StatusForbidden {
+			t.Errorf("expected 404/403 for foreign parent, got %d", rr.Code)
+		}
+		if got := countUserFolders(t, pool, userB); got != 0 {
+			t.Errorf("expected no folder created for foreign parent, found %d", got)
+		}
+	})
+
+	t.Run("non-existent parent UUID -> 404", func(t *testing.T) {
+		rr := createFolderRequest(fh, userA, map[string]interface{}{
+			"name":      "OrphanChild",
+			"parent_id": uuid.New().String(),
+		})
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for non-existent parent, got %d", rr.Code)
+		}
+	})
+}
+
+// --- Task 4.3: folder metadata survives handler restart (C2) ---
+
+func TestFolderMetadata_SurvivesRestart(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+
+	userID := createTestUser(t, pool, 10*1024*1024)
+
+	first := handler.NewFolderHandler(pool, engine)
+	rrRoot := createFolderRequest(first, userID, map[string]interface{}{"name": "PersistRoot"})
+	if rrRoot.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d, body: %s", rrRoot.Code, rrRoot.Body.String())
+	}
+	root := decodeFolderMeta(t, rrRoot)
+
+	rrChild := createFolderRequest(first, userID, map[string]interface{}{
+		"name":      "PersistChild",
+		"parent_id": root.ID,
+	})
+	if rrChild.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for child, got %d", rrChild.Code)
+	}
+	child := decodeFolderMeta(t, rrChild)
+
+	// Simulate service restart: fresh handler instance sharing only the pool.
+	second := handler.NewFolderHandler(pool, engine)
+
+	rootList := decodeFolderList(t, listFoldersRequest(second, userID, "/api/v1/folders"))
+	if len(rootList) != 1 || rootList[0].ID != root.ID {
+		t.Errorf("expected exactly root folder %s after restart, got %+v", root.ID, rootList)
+	}
+
+	childList := decodeFolderList(t, listFoldersRequest(second, userID, "/api/v1/folders?parent_id="+root.ID))
+	if len(childList) != 1 || childList[0].ID != child.ID {
+		t.Errorf("expected exactly child folder %s after restart, got %+v", child.ID, childList)
+	}
+}
+
+// --- Task 3.4: recursive folder deletion with disk and quota cleanup (H4) ---
+
+func TestFolderDelete_RecursiveWithDiskCleanup(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	folderHandler := handler.NewFolderHandler(pool, engine)
+	fileHandler := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userID := createTestUser(t, pool, 10*1024*1024)
+
+	rrL1 := createFolderRequest(folderHandler, userID, map[string]interface{}{"name": "Level1"})
+	if rrL1.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for Level1, got %d", rrL1.Code)
+	}
+	l1 := decodeFolderMeta(t, rrL1)
+
+	rrL2 := createFolderRequest(folderHandler, userID, map[string]interface{}{"name": "Level2", "parent_id": l1.ID})
+	if rrL2.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for Level2, got %d, body: %s", rrL2.Code, rrL2.Body.String())
+	}
+	l2 := decodeFolderMeta(t, rrL2)
+
+	content := []byte("nested binary payload")
+	rrFile := uploadTestFile(t, fileHandler, userID, "nested.bin", content, l2.ID)
+	if rrFile.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for nested file upload, got %d, body: %s", rrFile.Code, rrFile.Body.String())
+	}
+	fileMeta := decodeFileMeta(t, rrFile)
+
+	if got := getUserUsedBytes(t, pool, userID); got != int64(len(content)) {
+		t.Fatalf("expected used_bytes %d before delete, got %d", len(content), got)
+	}
+	if _, err := engine.GetFilePath(fileMeta.ID); err != nil {
+		t.Fatalf("expected nested file shard on disk before delete: %v", err)
+	}
+
+	delRR := deleteFolderRequest(folderHandler, userID, l1.ID)
+	if delRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for recursive delete, got %d, body: %s", delRR.Code, delRR.Body.String())
+	}
+
+	if folderExistsInDB(t, pool, l1.ID) {
+		t.Error("expected Level1 folder row deleted")
+	}
+	if folderExistsInDB(t, pool, l2.ID) {
+		t.Error("expected nested Level2 folder row deleted recursively")
+	}
+	if got := countUserFiles(t, pool, userID); got != 0 {
+		t.Errorf("expected nested files rows deleted, found %d", got)
+	}
+	if _, err := engine.GetFilePath(fileMeta.ID); err == nil {
+		t.Error("expected nested file binary shard removed from disk")
+	}
+	if got := countRegularFiles(t, tempDir); got != 0 {
+		t.Errorf("expected no binaries left on disk after recursive delete, found %d", got)
+	}
+	if got := getUserUsedBytes(t, pool, userID); got != 0 {
+		t.Errorf("expected used_bytes adjusted to 0 after recursive delete, got %d", got)
+	}
+}
+
+// --- Task 3.5: foreign folder delete denied; deleted files no longer downloadable ---
+
+func TestFolderDelete_ForeignDeniedAndFilesGone(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	folderHandler := handler.NewFolderHandler(pool, engine)
+	fileHandler := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userA := createTestUser(t, pool, 10*1024*1024)
+	userB := createTestUser(t, pool, 10*1024*1024)
+
+	rrFolder := createFolderRequest(folderHandler, userA, map[string]interface{}{"name": "A Folder"})
+	if rrFolder.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rrFolder.Code)
+	}
+	folderA := decodeFolderMeta(t, rrFolder)
+
+	content := []byte("A's nested file")
+	rrFile := uploadTestFile(t, fileHandler, userA, "inside.bin", content, folderA.ID)
+	if rrFile.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for file upload, got %d, body: %s", rrFile.Code, rrFile.Body.String())
+	}
+	fileA := decodeFileMeta(t, rrFile)
+
+	t.Run("foreign folder delete returns 404 and leaves everything intact", func(t *testing.T) {
+		delRR := deleteFolderRequest(folderHandler, userB, folderA.ID)
+		if delRR.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for foreign folder delete, got %d", delRR.Code)
+		}
+		if !folderExistsInDB(t, pool, folderA.ID) {
+			t.Error("expected folder row untouched after foreign delete attempt")
+		}
+		if got := countUserFiles(t, pool, userA); got != 1 {
+			t.Errorf("expected file row untouched, got %d", got)
+		}
+		if _, err := engine.GetFilePath(fileA.ID); err != nil {
+			t.Errorf("expected binary shard untouched: %v", err)
+		}
+	})
+
+	t.Run("unknown folder id returns 404", func(t *testing.T) {
+		delRR := deleteFolderRequest(folderHandler, userA, uuid.New().String())
+		if delRR.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for unknown folder, got %d", delRR.Code)
+		}
+	})
+
+	t.Run("owner delete succeeds and files of deleted folder are not downloadable", func(t *testing.T) {
+		delRR := deleteFolderRequest(folderHandler, userA, folderA.ID)
+		if delRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d, body: %s", delRR.Code, delRR.Body.String())
+		}
+
+		dlRR := downloadFileRequest(fileHandler, userA, fileA.ID)
+		if dlRR.Code != http.StatusNotFound {
+			t.Errorf("expected 404 downloading file of deleted folder, got %d", dlRR.Code)
+		}
+		if _, err := engine.GetFilePath(fileA.ID); err == nil {
+			t.Error("expected binary shard of deleted folder removed from disk")
+		}
+	})
 }

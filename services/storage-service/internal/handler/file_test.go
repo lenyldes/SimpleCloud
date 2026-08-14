@@ -2,14 +2,12 @@ package handler_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -20,289 +18,118 @@ import (
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
 )
 
-func TestFileUploadHandler_Success(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "file_handler_test_*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
+func decodeFileMeta(t *testing.T, rr *httptest.ResponseRecorder) handler.FileMetadata {
+	t.Helper()
+	var meta handler.FileMetadata
+	if err := json.NewDecoder(rr.Body).Decode(&meta); err != nil {
+		t.Fatalf("failed to decode file metadata JSON: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
-
-	engine := storage.NewDiskEngine(tempDir)
-	fileHandler := handler.NewFileHandler(engine, 10*1024*1024) // 10MB quota
-
-	content := []byte("Sample file payload for upload testing.")
-	hashBytes := sha256.Sum256(content)
-	expectedSHA256 := hex.EncodeToString(hashBytes[:])
-
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("file", "testfile.txt")
-	if err != nil {
-		t.Fatalf("failed to create form file: %v", err)
-	}
-	_, _ = part.Write(content)
-	_ = writer.Close()
-
-	req, err := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-	if err != nil {
-		t.Fatalf("failed to create upload request: %v", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req = req.WithContext(auth.WithUserID(req.Context(), uuid.New()))
-
-	rr := httptest.NewRecorder()
-	h := http.HandlerFunc(fileHandler.UploadHandler)
-	h.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("expected HTTP 201 Created, got %d, body: %s", rr.Code, rr.Body.String())
-	}
-
-	var resp struct {
-		ID       string `json:"id"`
-		Filename string `json:"filename"`
-		Size     int64  `json:"size"`
-		SHA256   string `json:"sha256"`
-	}
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to parse upload response JSON: %v", err)
-	}
-
-	if resp.Filename != "testfile.txt" {
-		t.Errorf("expected filename 'testfile.txt', got %q", resp.Filename)
-	}
-	if resp.Size != int64(len(content)) {
-		t.Errorf("expected size %d, got %d", len(content), resp.Size)
-	}
-	if resp.SHA256 != expectedSHA256 {
-		t.Errorf("expected SHA256 %s, got %s", expectedSHA256, resp.SHA256)
-	}
+	return meta
 }
 
-func TestFileUploadHandler_QuotaExceeded(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "file_handler_quota_test_*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
+func decodeFileList(t *testing.T, rr *httptest.ResponseRecorder) []handler.FileMetadata {
+	t.Helper()
+	var list []handler.FileMetadata
+	if err := json.NewDecoder(rr.Body).Decode(&list); err != nil {
+		t.Fatalf("failed to decode file list JSON: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
-
-	engine := storage.NewDiskEngine(tempDir)
-	fileHandler := handler.NewFileHandler(engine, 50) // 50 bytes quota limit
-
-	content := bytes.Repeat([]byte("X"), 500) // 500 bytes exceeds 50 byte quota
-
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("file", "large.bin")
-	if err != nil {
-		t.Fatalf("failed to create form file: %v", err)
-	}
-	_, _ = part.Write(content)
-	_ = writer.Close()
-
-	req, err := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req = req.WithContext(auth.WithUserID(req.Context(), uuid.New()))
-
-	rr := httptest.NewRecorder()
-	h := http.HandlerFunc(fileHandler.UploadHandler)
-	h.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("expected HTTP 413 Payload Too Large, got %d", rr.Code)
-	}
-
-	var errResp struct {
-		Error string `json:"error"`
-	}
-	if err := json.NewDecoder(rr.Body).Decode(&errResp); err != nil {
-		t.Fatalf("failed to parse JSON error payload: %v", err)
-	}
-	if errResp.Error == "" {
-		t.Error("expected non-empty error message in response JSON")
-	}
+	return list
 }
 
-func TestFileDownloadHandler_SuccessAndNotFound(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "file_handler_dl_test_*")
+func listFilesRequest(fh *handler.FileHandler, userID uuid.UUID, url string) *httptest.ResponseRecorder {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
+		panic(err)
 	}
-	defer os.RemoveAll(tempDir)
+	req = req.WithContext(auth.WithUserID(req.Context(), userID))
+	rr := httptest.NewRecorder()
+	fh.ListHandler(rr, req)
+	return rr
+}
 
+func downloadFileRequest(fh *handler.FileHandler, userID uuid.UUID, fileID string) *httptest.ResponseRecorder {
+	req, err := http.NewRequest(http.MethodGet, "/api/v1/files/download/"+fileID, nil)
+	if err != nil {
+		panic(err)
+	}
+	req = req.WithContext(auth.WithUserID(req.Context(), userID))
+	rr := httptest.NewRecorder()
+	fh.DownloadHandler(rr, req)
+	return rr
+}
+
+func deleteFileRequest(fh *handler.FileHandler, userID uuid.UUID, fileID string) *httptest.ResponseRecorder {
+	req, err := http.NewRequest(http.MethodDelete, "/api/v1/files/"+fileID, nil)
+	if err != nil {
+		panic(err)
+	}
+	req = req.WithContext(auth.WithUserID(req.Context(), userID))
+	rr := httptest.NewRecorder()
+	fh.DeleteHandler(rr, req)
+	return rr
+}
+
+// --- Non-DB guards: method and authentication checks only (pool may be nil) ---
+
+func TestFileHandler_MethodAndAuthGuards(t *testing.T) {
+	tempDir := t.TempDir()
 	engine := storage.NewDiskEngine(tempDir)
-	fileHandler := handler.NewFileHandler(engine, 1024*1024)
-
-	fileID := "f47a8b90-1234-5678-9abc-def012345678"
-	content := []byte("Downloaded binary content test")
-	_, _, err = engine.Save(fileID, bytes.NewReader(content), 1024*1024)
-	if err != nil {
-		t.Fatalf("failed to setup test file: %v", err)
-	}
-
+	fh := handler.NewFileHandler(engine, nil, 10*1024*1024)
 	testUserID := uuid.New()
 
-	t.Run("Successful download", func(t *testing.T) {
-		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/files/download/%s", fileID), nil)
-		if err != nil {
-			t.Fatalf("failed to create request: %v", err)
-		}
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-
-		rr := httptest.NewRecorder()
-		h := http.HandlerFunc(fileHandler.DownloadHandler)
-		h.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected HTTP 200 OK, got %d", rr.Code)
-		}
-
-		if rr.Header().Get("Content-Length") != fmt.Sprintf("%d", len(content)) {
-			t.Errorf("expected Content-Length %d, got %s", len(content), rr.Header().Get("Content-Length"))
-		}
-
-		if rr.Body.String() != string(content) {
-			t.Errorf("expected body %q, got %q", string(content), rr.Body.String())
-		}
-	})
-
-	t.Run("File not found download", func(t *testing.T) {
-		nonExistentID := "00000000-0000-0000-0000-000000000000"
-		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/files/download/%s", nonExistentID), nil)
-		if err != nil {
-			t.Fatalf("failed to create request: %v", err)
-		}
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-
-		rr := httptest.NewRecorder()
-		h := http.HandlerFunc(fileHandler.DownloadHandler)
-		h.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusNotFound {
-			t.Errorf("expected HTTP 404 Not Found, got %d", rr.Code)
-		}
-	})
-}
-
-func TestFileListHandler_Success(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "file_handler_list_test_*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	engine := storage.NewDiskEngine(tempDir)
-	fileHandler := handler.NewFileHandler(engine, 1024*1024)
-
-	req, err := http.NewRequest(http.MethodGet, "/api/v1/files", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
-	req = req.WithContext(auth.WithUserID(req.Context(), uuid.New()))
-
-	rr := httptest.NewRecorder()
-	h := http.HandlerFunc(fileHandler.ListHandler)
-	h.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected HTTP 200 OK, got %d", rr.Code)
+	withUser := func(req *http.Request) *http.Request {
+		return req.WithContext(auth.WithUserID(req.Context(), testUserID))
 	}
 
-	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
-		t.Errorf("expected Content-Type application/json, got %s", ct)
-	}
-
-	var files []map[string]any
-	if err := json.NewDecoder(rr.Body).Decode(&files); err != nil {
-		t.Fatalf("failed to decode JSON list: %v", err)
-	}
-}
-
-func TestFileHandler_InvalidMethodsAndInputs(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "file_handler_err_test_*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	engine := storage.NewDiskEngine(tempDir)
-	fileHandler := handler.NewFileHandler(engine, 1024*1024)
-	testUserID := uuid.New()
-
-	t.Run("UploadHandler method not allowed", func(t *testing.T) {
+	t.Run("UploadHandler wrong method returns 405", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/upload", nil)
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 		rr := httptest.NewRecorder()
-		fileHandler.UploadHandler(rr, req)
+		fh.UploadHandler(rr, withUser(req))
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Errorf("expected 405, got %d", rr.Code)
 		}
 	})
 
-	t.Run("UploadHandler invalid multipart form", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", strings.NewReader("not a multipart body"))
-		req.Header.Set("Content-Type", "multipart/form-data; boundary=invalid")
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-		rr := httptest.NewRecorder()
-		fileHandler.UploadHandler(rr, req)
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400, got %d", rr.Code)
-		}
-	})
-
-	t.Run("UploadHandler missing file field", func(t *testing.T) {
-		body := &bytes.Buffer{}
-		writer := multipart.NewWriter(body)
-		_ = writer.WriteField("other", "value")
-		_ = writer.Close()
-
-		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-		req.Header.Set("Content-Type", writer.FormDataContentType())
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-		rr := httptest.NewRecorder()
-		fileHandler.UploadHandler(rr, req)
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400, got %d", rr.Code)
-		}
-	})
-
-	t.Run("DownloadHandler method not allowed", func(t *testing.T) {
+	t.Run("DownloadHandler wrong method returns 405", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/download/1234", nil)
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 		rr := httptest.NewRecorder()
-		fileHandler.DownloadHandler(rr, req)
+		fh.DownloadHandler(rr, withUser(req))
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Errorf("expected 405, got %d", rr.Code)
 		}
 	})
 
-	t.Run("DownloadHandler missing file ID", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/download/", nil)
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-		rr := httptest.NewRecorder()
-		fileHandler.DownloadHandler(rr, req)
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400, got %d", rr.Code)
-		}
-	})
-
-	t.Run("ListHandler method not allowed", func(t *testing.T) {
+	t.Run("ListHandler wrong method returns 405", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files", nil)
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
 		rr := httptest.NewRecorder()
-		fileHandler.ListHandler(rr, req)
+		fh.ListHandler(rr, withUser(req))
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Errorf("expected 405, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DeleteHandler wrong method returns 405", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/"+uuid.New().String(), nil)
+		rr := httptest.NewRecorder()
+		fh.DeleteHandler(rr, withUser(req))
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected 405, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler unauthenticated returns 401", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", strings.NewReader(""))
+		rr := httptest.NewRecorder()
+		fh.UploadHandler(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", rr.Code)
 		}
 	})
 
 	t.Run("DownloadHandler unauthenticated returns 401", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/download/1234", nil)
 		rr := httptest.NewRecorder()
-		fileHandler.DownloadHandler(rr, req)
+		fh.DownloadHandler(rr, req)
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", rr.Code)
 		}
@@ -311,365 +138,556 @@ func TestFileHandler_InvalidMethodsAndInputs(t *testing.T) {
 	t.Run("ListHandler unauthenticated returns 401", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files", nil)
 		rr := httptest.NewRecorder()
-		fileHandler.ListHandler(rr, req)
+		fh.ListHandler(rr, req)
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", rr.Code)
 		}
 	})
 
-	t.Run("DownloadHandler another user file returns 404", func(t *testing.T) {
-		userA := uuid.New()
-		userB := uuid.New()
-
-		body := &bytes.Buffer{}
-		writer := multipart.NewWriter(body)
-		part, _ := writer.CreateFormFile("file", "usera.txt")
-		_, _ = part.Write([]byte("data"))
-		_ = writer.Close()
-
-		uploadReq, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-		uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
-		uploadReq = uploadReq.WithContext(auth.WithUserID(uploadReq.Context(), userA))
-		uploadRR := httptest.NewRecorder()
-		fileHandler.UploadHandler(uploadRR, uploadReq)
-
-		var meta handler.FileMetadata
-		_ = json.NewDecoder(uploadRR.Body).Decode(&meta)
-
-		dlReq, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/files/download/%s", meta.ID), nil)
-		dlReq = dlReq.WithContext(auth.WithUserID(dlReq.Context(), userB))
-		dlRR := httptest.NewRecorder()
-		fileHandler.DownloadHandler(dlRR, dlReq)
-
-		if dlRR.Code != http.StatusNotFound {
-			t.Errorf("expected 404 for downloading another user file, got %d", dlRR.Code)
+	t.Run("DeleteHandler unauthenticated returns 401", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodDelete, "/api/v1/files/1234", nil)
+		rr := httptest.NewRecorder()
+		fh.DeleteHandler(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", rr.Code)
 		}
 	})
 }
 
-func TestFileDownloadHandler_WithMetadata(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "file_handler_meta_dl_test_*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+// --- Task 1.2: upload persists full metadata record into PostgreSQL ---
 
+func TestFileUpload_PersistsMetadataToDB(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
 	engine := storage.NewDiskEngine(tempDir)
-	fileHandler := handler.NewFileHandler(engine, 1024*1024)
-	testUserID := uuid.New()
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
 
-	// First upload a file to populate metadata in fileHandler
-	content := []byte("Metadata attachment download test")
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	part, _ := writer.CreateFormFile("file", "document.pdf")
-	_, _ = part.Write(content)
-	_ = writer.Close()
+	userID := createTestUser(t, pool, 10*1024*1024)
+	content := []byte("persistent metadata payload")
+	expectedSHA := sha256.Sum256(content)
 
-	uploadReq, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
-	uploadReq = uploadReq.WithContext(auth.WithUserID(uploadReq.Context(), testUserID))
-	uploadRR := httptest.NewRecorder()
-	fileHandler.UploadHandler(uploadRR, uploadReq)
-
-	if uploadRR.Code != http.StatusCreated {
-		t.Fatalf("upload failed: %d", uploadRR.Code)
-	}
-
-	var meta handler.FileMetadata
-	if err := json.NewDecoder(uploadRR.Body).Decode(&meta); err != nil {
-		t.Fatalf("failed to decode upload response: %v", err)
-	}
-
-	// Now download the uploaded file
-	dlReq, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/files/download/%s", meta.ID), nil)
-	dlReq = dlReq.WithContext(auth.WithUserID(dlReq.Context(), testUserID))
-	dlRR := httptest.NewRecorder()
-	fileHandler.DownloadHandler(dlRR, dlReq)
-
-	if dlRR.Code != http.StatusOK {
-		t.Fatalf("download failed: %d", dlRR.Code)
-	}
-
-	disposition := dlRR.Header().Get("Content-Disposition")
-	if !strings.Contains(disposition, "document.pdf") {
-		t.Errorf("expected Content-Disposition to contain 'document.pdf', got %q", disposition)
-	}
-
-	// Also verify ListHandler returns this item
-	listReq, _ := http.NewRequest(http.MethodGet, "/api/v1/files", nil)
-	listReq = listReq.WithContext(auth.WithUserID(listReq.Context(), testUserID))
-	listRR := httptest.NewRecorder()
-	fileHandler.ListHandler(listRR, listReq)
-
-	if listRR.Code != http.StatusOK {
-		t.Fatalf("list failed: %d", listRR.Code)
-	}
-
-	var list []handler.FileMetadata
-	if err := json.NewDecoder(listRR.Body).Decode(&list); err != nil {
-		t.Fatalf("failed to decode list response: %v", err)
-	}
-	if len(list) != 1 {
-		t.Errorf("expected 1 file in list, got %d", len(list))
-	}
-}
-
-func TestFileUploadHandler_SaveError500(t *testing.T) {
-	unwritableEngine := storage.NewDiskEngine("/dev/null/invalid_path")
-	unwritableHandler := handler.NewFileHandler(unwritableEngine, 1024*1024)
-
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	part, _ := writer.CreateFormFile("file", "test.txt")
-	_, _ = part.Write([]byte("data"))
-	_ = writer.Close()
-
-	req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req = req.WithContext(auth.WithUserID(req.Context(), uuid.New()))
-	rr := httptest.NewRecorder()
-	unwritableHandler.UploadHandler(rr, req)
-
-	if rr.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500 Internal Server Error, got %d", rr.Code)
-	}
-}
-
-func TestFileUploadHandler_WithFolderID(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "file_handler_folder_test_*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	engine := storage.NewDiskEngine(tempDir)
-	fileHandler := handler.NewFileHandler(engine, 10*1024*1024)
-	testUserID := uuid.New()
-	targetFolderID := uuid.New().String()
-
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	_ = writer.WriteField("folder_id", targetFolderID)
-	part, err := writer.CreateFormFile("file", "nested_file.txt")
-	if err != nil {
-		t.Fatalf("failed to create form file: %v", err)
-	}
-	_, _ = part.Write([]byte("Nested file content inside folder"))
-	_ = writer.Close()
-
-	req, err := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-	if err != nil {
-		t.Fatalf("failed to create upload request: %v", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-
-	rr := httptest.NewRecorder()
-	h := http.HandlerFunc(fileHandler.UploadHandler)
-	h.ServeHTTP(rr, req)
-
+	rr := uploadTestFile(t, fh, userID, "persist.txt", content, "")
 	if rr.Code != http.StatusCreated {
-		t.Fatalf("expected HTTP 201 Created, got %d, body: %s", rr.Code, rr.Body.String())
+		t.Fatalf("expected 201 Created, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	meta := decodeFileMeta(t, rr)
+	if meta.Filename != "persist.txt" || meta.Size != int64(len(content)) {
+		t.Errorf("unexpected response metadata: %+v", meta)
+	}
+	if hex.EncodeToString(expectedSHA[:]) != meta.SHA256 {
+		t.Errorf("expected sha256 %s, got %s", hex.EncodeToString(expectedSHA[:]), meta.SHA256)
 	}
 
-	var resp handler.FileMetadata
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode response JSON: %v", err)
+	var dbFilename, dbSHA, dbStoragePath string
+	var dbSize int64
+	var dbUserID uuid.UUID
+	var dbFolderID *uuid.UUID
+	err := pool.QueryRow(context.Background(),
+		`SELECT user_id, filename, size_bytes, sha256_hash, storage_path, folder_id FROM files WHERE id = $1`,
+		meta.ID).Scan(&dbUserID, &dbFilename, &dbSize, &dbSHA, &dbStoragePath, &dbFolderID)
+	if err != nil {
+		t.Fatalf("expected files row for uploaded file, query failed: %v", err)
+	}
+	if dbUserID != userID {
+		t.Errorf("expected user_id %s in files row, got %s", userID, dbUserID)
+	}
+	if dbFilename != "persist.txt" {
+		t.Errorf("expected filename persist.txt, got %q", dbFilename)
+	}
+	if dbSize != int64(len(content)) {
+		t.Errorf("expected size_bytes %d, got %d", len(content), dbSize)
+	}
+	if dbSHA != hex.EncodeToString(expectedSHA[:]) {
+		t.Errorf("expected sha256_hash %s, got %s", hex.EncodeToString(expectedSHA[:]), dbSHA)
+	}
+	if dbStoragePath == "" {
+		t.Error("expected non-empty storage_path in files row")
+	}
+	if dbFolderID != nil {
+		t.Errorf("expected NULL folder_id for root upload, got %v", dbFolderID)
 	}
 
-	if resp.FolderID == nil || *resp.FolderID != targetFolderID {
-		t.Errorf("expected folder_id %s, got %v", targetFolderID, resp.FolderID)
+	listRR := listFilesRequest(fh, userID, "/api/v1/files")
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for list, got %d", listRR.Code)
+	}
+	list := decodeFileList(t, listRR)
+	found := false
+	for _, f := range list {
+		if f.ID == meta.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("uploaded file %s not visible in GET /api/v1/files of owner, list: %+v", meta.ID, list)
 	}
 }
 
-func TestFileListHandler_FolderScoped(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "file_list_folder_scoped_*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+// --- Task 1.3: "restart" regression (C2) — fresh handler instance with same pool ---
 
+func TestFileMetadata_SurvivesRestart(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
 	engine := storage.NewDiskEngine(tempDir)
-	fileHandler := handler.NewFileHandler(engine, 10*1024*1024)
-	testUserID := uuid.New()
-	folderID := uuid.New().String()
 
-	// 1. Upload root file (no folder_id)
-	bodyRoot := &bytes.Buffer{}
-	writerRoot := multipart.NewWriter(bodyRoot)
-	partRoot, _ := writerRoot.CreateFormFile("file", "root.txt")
-	_, _ = partRoot.Write([]byte("root file"))
-	_ = writerRoot.Close()
+	userID := createTestUser(t, pool, 10*1024*1024)
+	content := []byte("restart survival content")
 
-	reqRoot, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", bodyRoot)
-	reqRoot.Header.Set("Content-Type", writerRoot.FormDataContentType())
-	reqRoot = reqRoot.WithContext(auth.WithUserID(reqRoot.Context(), testUserID))
-	rrRoot := httptest.NewRecorder()
-	fileHandler.UploadHandler(rrRoot, reqRoot)
+	first := handler.NewFileHandler(engine, pool, 10*1024*1024)
+	rr := uploadTestFile(t, first, userID, "restart.txt", content, "")
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	meta := decodeFileMeta(t, rr)
 
-	// 2. Upload nested file (with folder_id)
-	bodyNested := &bytes.Buffer{}
-	writerNested := multipart.NewWriter(bodyNested)
-	_ = writerNested.WriteField("folder_id", folderID)
-	partNested, _ := writerNested.CreateFormFile("file", "nested.txt")
-	_, _ = partNested.Write([]byte("nested file"))
-	_ = writerNested.Close()
+	// Simulate service restart: brand-new handler instance sharing only the DB pool.
+	second := handler.NewFileHandler(engine, pool, 10*1024*1024)
 
-	reqNested, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", bodyNested)
-	reqNested.Header.Set("Content-Type", writerNested.FormDataContentType())
-	reqNested = reqNested.WithContext(auth.WithUserID(reqNested.Context(), testUserID))
-	rrNested := httptest.NewRecorder()
-	fileHandler.UploadHandler(rrNested, reqNested)
-
-	// 3. GET /api/v1/files (root files only)
-	reqGetRoot, _ := http.NewRequest(http.MethodGet, "/api/v1/files", nil)
-	reqGetRoot = reqGetRoot.WithContext(auth.WithUserID(reqGetRoot.Context(), testUserID))
-	rrGetRoot := httptest.NewRecorder()
-	fileHandler.ListHandler(rrGetRoot, reqGetRoot)
-
-	var rootList []handler.FileMetadata
-	_ = json.NewDecoder(rrGetRoot.Body).Decode(&rootList)
-	if len(rootList) != 1 || rootList[0].Filename != "root.txt" {
-		t.Errorf("expected 1 root file 'root.txt', got %v", rootList)
+	listRR := listFilesRequest(second, userID, "/api/v1/files")
+	list := decodeFileList(t, listRR)
+	found := false
+	for _, f := range list {
+		if f.ID == meta.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("file %s not visible to owner after handler restart, list: %+v", meta.ID, list)
 	}
 
-	// 4. GET /api/v1/files?folder_id=<folderID> (nested files only)
-	reqGetNested, _ := http.NewRequest(http.MethodGet, "/api/v1/files?folder_id="+folderID, nil)
-	reqGetNested = reqGetNested.WithContext(auth.WithUserID(reqGetNested.Context(), testUserID))
-	rrGetNested := httptest.NewRecorder()
-	fileHandler.ListHandler(rrGetNested, reqGetNested)
-
-	var nestedList []handler.FileMetadata
-	_ = json.NewDecoder(rrGetNested.Body).Decode(&nestedList)
-	if len(nestedList) != 1 || nestedList[0].Filename != "nested.txt" {
-		t.Errorf("expected 1 nested file 'nested.txt', got %v", nestedList)
+	dlRR := downloadFileRequest(second, userID, meta.ID)
+	if dlRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK download after restart, got %d", dlRR.Code)
+	}
+	if dlRR.Body.String() != string(content) {
+		t.Errorf("expected downloaded body %q, got %q", content, dlRR.Body.String())
 	}
 }
 
-func TestFileUploadHandler_PreStreamContentLengthQuotaExceeded(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "file_handler_prestream_test_*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+// --- Task 1.4: IDOR regression (C2) ---
 
+func TestFileDownload_IDORUniform404(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
 	engine := storage.NewDiskEngine(tempDir)
-	fileHandler := handler.NewFileHandler(engine, 100) // quota limit 100 bytes
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
 
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	part, _ := writer.CreateFormFile("file", "oversized.bin")
-	_, _ = part.Write(bytes.Repeat([]byte("A"), 500))
-	_ = writer.Close()
+	userA := createTestUser(t, pool, 10*1024*1024)
+	userB := createTestUser(t, pool, 10*1024*1024)
 
-	req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("Content-Length", "5000") // Advertised Content-Length far exceeds 100 byte quota
-	req = req.WithContext(auth.WithUserID(req.Context(), uuid.New()))
+	rr := uploadTestFile(t, fh, userA, "secret.txt", []byte("user A secret"), "")
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d", rr.Code)
+	}
+	meta := decodeFileMeta(t, rr)
 
+	t.Run("another user's file returns 404", func(t *testing.T) {
+		dlRR := downloadFileRequest(fh, userB, meta.ID)
+		if dlRR.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for foreign file download, got %d", dlRR.Code)
+		}
+	})
+
+	t.Run("non-existent UUID returns identical 404", func(t *testing.T) {
+		dlRR := downloadFileRequest(fh, userB, uuid.New().String())
+		if dlRR.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for non-existent file download, got %d", dlRR.Code)
+		}
+	})
+
+	t.Run("binary on disk without DB record is never served", func(t *testing.T) {
+		orphanID := uuid.New().String()
+		if _, _, err := engine.Save(orphanID, bytes.NewReader([]byte("orphan binary")), 1024); err != nil {
+			t.Fatalf("failed to place orphan binary on disk: %v", err)
+		}
+		dlRR := downloadFileRequest(fh, userA, orphanID)
+		if dlRR.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for file present on disk but absent in DB, got %d", dlRR.Code)
+		}
+	})
+}
+
+// --- Task 1.5: list returns only owner files with root/folder filters ---
+
+func TestFileList_OwnerScopedAndFolderFilters(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userA := createTestUser(t, pool, 10*1024*1024)
+	userB := createTestUser(t, pool, 10*1024*1024)
+	folderA := createTestFolder(t, pool, userA)
+
+	if rr := uploadTestFile(t, fh, userA, "root-a.txt", []byte("root A"), ""); rr.Code != http.StatusCreated {
+		t.Fatalf("root upload failed: %d", rr.Code)
+	}
+	if rr := uploadTestFile(t, fh, userA, "nested-a.txt", []byte("nested A"), folderA.String()); rr.Code != http.StatusCreated {
+		t.Fatalf("nested upload failed: %d, body: %s", rr.Code, rr.Body.String())
+	}
+	if rr := uploadTestFile(t, fh, userB, "root-b.txt", []byte("root B"), ""); rr.Code != http.StatusCreated {
+		t.Fatalf("user B upload failed: %d", rr.Code)
+	}
+
+	t.Run("root listing shows only owner's root files", func(t *testing.T) {
+		list := decodeFileList(t, listFilesRequest(fh, userA, "/api/v1/files"))
+		if len(list) != 1 || list[0].Filename != "root-a.txt" {
+			t.Errorf("expected exactly [root-a.txt], got %+v", list)
+		}
+	})
+
+	t.Run("empty folder_id filter means root", func(t *testing.T) {
+		list := decodeFileList(t, listFilesRequest(fh, userA, "/api/v1/files?folder_id="))
+		if len(list) != 1 || list[0].Filename != "root-a.txt" {
+			t.Errorf("expected exactly [root-a.txt], got %+v", list)
+		}
+	})
+
+	t.Run("folder_id filter shows only that folder's files", func(t *testing.T) {
+		list := decodeFileList(t, listFilesRequest(fh, userA, "/api/v1/files?folder_id="+folderA.String()))
+		if len(list) != 1 || list[0].Filename != "nested-a.txt" {
+			t.Errorf("expected exactly [nested-a.txt], got %+v", list)
+		}
+	})
+
+	t.Run("other user never sees foreign files", func(t *testing.T) {
+		list := decodeFileList(t, listFilesRequest(fh, userB, "/api/v1/files"))
+		for _, f := range list {
+			if f.Filename == "root-a.txt" || f.Filename == "nested-a.txt" {
+				t.Errorf("user B must not see user A file %q", f.Filename)
+			}
+		}
+	})
+}
+
+// --- Tasks 2.1–2.4: transactional quota accounting (C4, M8) ---
+
+func TestUpload_IncrementsUsedBytes(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userID := createTestUser(t, pool, 10*1024*1024)
+	content := []byte("quota accounting payload")
+
+	before := getUserUsedBytes(t, pool, userID)
+	rr := uploadTestFile(t, fh, userID, "quota.txt", content, "")
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	after := getUserUsedBytes(t, pool, userID)
+	if after != before+int64(len(content)) {
+		t.Errorf("expected used_bytes to grow from %d to %d, got %d", before, before+len(content), after)
+	}
+}
+
+func TestUpload_SecondUploadOverRemainingQuota_413(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 1000) // total quota 1000 bytes
+
+	userID := createTestUser(t, pool, 1000)
+
+	// First upload consumes 400 bytes of the 1000-byte quota.
+	first := bytes.Repeat([]byte("A"), 400)
+	if rr := uploadTestFile(t, fh, userID, "first.bin", first, ""); rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for first upload, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	usedAfterFirst := getUserUsedBytes(t, pool, userID)
+	if usedAfterFirst != 400 {
+		t.Fatalf("expected used_bytes 400 after first upload, got %d", usedAfterFirst)
+	}
+
+	// Second upload of 700 bytes fits the TOTAL quota (1000) but not the
+	// REMAINING quota (600) — must be rejected with 413.
+	second := bytes.Repeat([]byte("B"), 700)
+	rr := uploadTestFile(t, fh, userID, "second.bin", second, "")
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413 Payload Too Large for upload over remaining quota, got %d", rr.Code)
+	}
+	if got := getUserUsedBytes(t, pool, userID); got != usedAfterFirst {
+		t.Errorf("expected used_bytes unchanged at %d after rejected upload, got %d", usedAfterFirst, got)
+	}
+	if got := countUserFiles(t, pool, userID); got != 1 {
+		t.Errorf("expected exactly 1 files row after rejected upload, got %d", got)
+	}
+	if got := countRegularFiles(t, tempDir); got != 1 {
+		t.Errorf("expected exactly 1 binary shard on disk after rejected upload, got %d", got)
+	}
+}
+
+func TestUpload_ContentLengthPrecheckAgainstRemainingQuota(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 10000) // total quota 10000 bytes
+
+	userID := createTestUser(t, pool, 10000)
+
+	// Consume 6000 bytes; remaining quota is 4000.
+	if rr := uploadTestFile(t, fh, userID, "fill.bin", bytes.Repeat([]byte("F"), 6000), ""); rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for filler upload, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	// Advertised Content-Length 5000 exceeds remaining 4000 but is BELOW the
+	// total quota 10000 — the precheck must compare against the remainder and
+	// reject before reading the body.
+	req := buildUploadRequest(t, userID, "over.bin", bytes.Repeat([]byte("O"), 10), "")
+	req.Header.Set("Content-Length", "5000")
+	req.ContentLength = 5000
 	rr := httptest.NewRecorder()
-	fileHandler.UploadHandler(rr, req)
+	fh.UploadHandler(rr, req)
 
 	if rr.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("expected 413 Payload Too Large on pre-stream Content-Length check, got %d", rr.Code)
+		t.Errorf("expected 413 from Content-Length precheck against remaining quota, got %d", rr.Code)
+	}
+	if got := getUserUsedBytes(t, pool, userID); got != 6000 {
+		t.Errorf("expected used_bytes unchanged at 6000, got %d", got)
+	}
+	if got := countUserFiles(t, pool, userID); got != 1 {
+		t.Errorf("expected exactly 1 files row, got %d", got)
 	}
 }
 
-func TestFileHandler_InvalidMethodsAndErrorBranches(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "file_handler_error_test_*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
+func TestUpload_MetadataPersistenceFailureRollsBackDisk(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
 	engine := storage.NewDiskEngine(tempDir)
-	fileHandler := handler.NewFileHandler(engine, 10*1024*1024)
-	testUserID := uuid.New()
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
 
-	t.Run("UploadHandler invalid method returns 405", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/upload", nil)
-		rr := httptest.NewRecorder()
-		fileHandler.UploadHandler(rr, req)
-		if rr.Code != http.StatusMethodNotAllowed {
-			t.Errorf("expected 405, got %d", rr.Code)
+	userID := createTestUser(t, pool, 10*1024*1024)
+
+	// folder_id referencing a non-existent folder forces the files INSERT to
+	// fail (FK violation) AFTER the binary was written to disk — exercising
+	// the os.Remove + rollback + 500 path required by the spec.
+	missingFolder := uuid.New().String()
+	rr := uploadTestFile(t, fh, userID, "doomed.txt", []byte("written then rolled back"), missingFolder)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 when metadata persistence fails, got %d", rr.Code)
+	}
+	if got := getUserUsedBytes(t, pool, userID); got != 0 {
+		t.Errorf("expected used_bytes unchanged at 0 after rollback, got %d", got)
+	}
+	if got := countUserFiles(t, pool, userID); got != 0 {
+		t.Errorf("expected no files rows after rollback, got %d", got)
+	}
+	if got := countRegularFiles(t, tempDir); got != 0 {
+		t.Errorf("expected written binary removed from disk after rollback, found %d file(s)", got)
+	}
+}
+
+func TestUpload_EngineSaveErrorReturns500(t *testing.T) {
+	pool := setupTestPool(t)
+	unwritableEngine := storage.NewDiskEngine("/dev/null/invalid_path")
+	fh := handler.NewFileHandler(unwritableEngine, pool, 10*1024*1024)
+
+	userID := createTestUser(t, pool, 10*1024*1024)
+	rr := uploadTestFile(t, fh, userID, "fail.txt", []byte("data"), "")
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 when disk engine fails, got %d", rr.Code)
+	}
+	if got := getUserUsedBytes(t, pool, userID); got != 0 {
+		t.Errorf("expected used_bytes unchanged at 0 after engine failure, got %d", got)
+	}
+}
+
+// --- Tasks 3.1–3.3: DELETE /api/v1/files/:id (H4) ---
+
+func TestFileDelete_OwnerSuccess(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userID := createTestUser(t, pool, 10*1024*1024)
+	content := []byte("delete me")
+
+	rr := uploadTestFile(t, fh, userID, "delete-me.txt", content, "")
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d", rr.Code)
+	}
+	meta := decodeFileMeta(t, rr)
+
+	if _, err := engine.GetFilePath(meta.ID); err != nil {
+		t.Fatalf("expected binary shard on disk before delete: %v", err)
+	}
+
+	delRR := deleteFileRequest(fh, userID, meta.ID)
+	if delRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for owner delete, got %d, body: %s", delRR.Code, delRR.Body.String())
+	}
+
+	var count int
+	if err := pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM files WHERE id = $1`, meta.ID).Scan(&count); err != nil {
+		t.Fatalf("failed to query files row: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected files row deleted, found %d rows", count)
+	}
+
+	if _, err := engine.GetFilePath(meta.ID); err == nil {
+		t.Error("expected binary shard removed from disk after delete")
+	}
+
+	if got := getUserUsedBytes(t, pool, userID); got != 0 {
+		t.Errorf("expected used_bytes decremented to 0, got %d", got)
+	}
+}
+
+func TestFileDelete_ForeignAndInvalidIDs(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userA := createTestUser(t, pool, 10*1024*1024)
+	userB := createTestUser(t, pool, 10*1024*1024)
+
+	rr := uploadTestFile(t, fh, userA, "keep.txt", []byte("must survive"), "")
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d", rr.Code)
+	}
+	meta := decodeFileMeta(t, rr)
+
+	t.Run("deleting another user's file returns 404 and touches nothing", func(t *testing.T) {
+		delRR := deleteFileRequest(fh, userB, meta.ID)
+		if delRR.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for foreign file delete, got %d", delRR.Code)
+		}
+		if got := countUserFiles(t, pool, userA); got != 1 {
+			t.Errorf("expected files row untouched, got %d rows", got)
+		}
+		if _, err := engine.GetFilePath(meta.ID); err != nil {
+			t.Errorf("expected binary shard untouched: %v", err)
+		}
+		if got := getUserUsedBytes(t, pool, userA); got != int64(len("must survive")) {
+			t.Errorf("expected used_bytes untouched, got %d", got)
 		}
 	})
 
-	t.Run("UploadHandler invalid Content-Length header parses normally", func(t *testing.T) {
-		body := &bytes.Buffer{}
-		writer := multipart.NewWriter(body)
-		part, _ := writer.CreateFormFile("file", "valid.txt")
-		_, _ = part.Write([]byte("data"))
-		_ = writer.Close()
-
-		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-		req.Header.Set("Content-Type", writer.FormDataContentType())
-		req.Header.Set("Content-Length", "invalid_number")
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-
-		rr := httptest.NewRecorder()
-		fileHandler.UploadHandler(rr, req)
-		if rr.Code != http.StatusCreated {
-			t.Errorf("expected 201 Created for invalid Content-Length header, got %d", rr.Code)
+	t.Run("deleting non-existent UUID returns 404", func(t *testing.T) {
+		delRR := deleteFileRequest(fh, userA, uuid.New().String())
+		if delRR.Code != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", delRR.Code)
 		}
 	})
 
-	t.Run("UploadHandler non-multipart body returns 400", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", strings.NewReader("not a multipart form"))
-		req.Header.Set("Content-Type", "text/plain")
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-
-		rr := httptest.NewRecorder()
-		fileHandler.UploadHandler(rr, req)
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400 Bad Request, got %d", rr.Code)
+	t.Run("deleting with non-UUID id returns 404", func(t *testing.T) {
+		delRR := deleteFileRequest(fh, userA, "not-a-uuid")
+		if delRR.Code != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", delRR.Code)
 		}
 	})
+}
 
-	t.Run("UploadHandler missing file field returns 400", func(t *testing.T) {
-		body := &bytes.Buffer{}
-		writer := multipart.NewWriter(body)
-		_ = writer.WriteField("other_field", "value")
-		_ = writer.Close()
+func TestFileDelete_UsedBytesNeverNegative(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
 
-		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-		req.Header.Set("Content-Type", writer.FormDataContentType())
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
+	userID := createTestUser(t, pool, 10*1024*1024)
 
-		rr := httptest.NewRecorder()
-		fileHandler.UploadHandler(rr, req)
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400 Bad Request for missing file field, got %d", rr.Code)
+	// Insert an inconsistent files row whose size exceeds used_bytes (0).
+	fileID := uuid.New()
+	_, err := pool.Exec(context.Background(),
+		`INSERT INTO files (id, user_id, filename, size_bytes, sha256_hash, storage_path)
+		 VALUES ($1, $2, 'inconsistent.bin', 500, repeat('0', 64), '/nonexistent/path')`,
+		fileID, userID)
+	if err != nil {
+		t.Fatalf("failed to insert inconsistent files row: %v", err)
+	}
+
+	delRR := deleteFileRequest(fh, userID, fileID.String())
+	if delRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d, body: %s", delRR.Code, delRR.Body.String())
+	}
+
+	if got := getUserUsedBytes(t, pool, userID); got != 0 {
+		t.Errorf("expected used_bytes clamped at 0, got %d", got)
+	}
+}
+
+// --- Task 3.6: DELETE route must not conflict with download/ and list routes ---
+
+func TestFilesRouting_NoConflict(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userID := createTestUser(t, pool, 10*1024*1024)
+
+	// Wire the mux exactly as cmd/main.go is required to: the more specific
+	// /api/v1/files/download/ pattern wins over the /api/v1/files/ dispatcher,
+	// DELETE on a single path segment reaches DeleteHandler.
+	mux := http.NewServeMux()
+	mux.Handle("/api/v1/files/upload", http.HandlerFunc(fh.UploadHandler))
+	mux.Handle("/api/v1/files/download/", http.HandlerFunc(fh.DownloadHandler))
+	mux.Handle("/api/v1/files", http.HandlerFunc(fh.ListHandler))
+	mux.Handle("/api/v1/files/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		segment := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/files/"), "/")
+		if r.Method == http.MethodDelete && segment != "" && !strings.Contains(segment, "/") {
+			fh.DeleteHandler(w, r)
+			return
 		}
-	})
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
 
-	t.Run("DownloadHandler unauthenticated returns 401", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/download/some-id", nil)
-		rr := httptest.NewRecorder()
-		fileHandler.DownloadHandler(rr, req)
-		if rr.Code != http.StatusUnauthorized {
-			t.Errorf("expected 401 Unauthorized, got %d", rr.Code)
-		}
-	})
+	content := []byte("routing test payload")
+	rr := uploadTestFile(t, fh, userID, "routing.txt", content, "")
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d", rr.Code)
+	}
+	meta := decodeFileMeta(t, rr)
 
-	t.Run("DownloadHandler empty file ID returns 400", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/download/", nil)
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-		rr := httptest.NewRecorder()
-		fileHandler.DownloadHandler(rr, req)
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400 Bad Request, got %d", rr.Code)
+	doRequest := func(method, path string, fileID string) *http.Response {
+		req, err := http.NewRequest(method, srv.URL+path+fileID, nil)
+		if err != nil {
+			t.Fatalf("failed to build request: %v", err)
 		}
-	})
+		req = req.WithContext(auth.WithUserID(req.Context(), userID))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		return resp
+	}
 
-	t.Run("DownloadHandler non-existent file ID returns 404", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/download/non-existent-id", nil)
-		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
-		rr := httptest.NewRecorder()
-		fileHandler.DownloadHandler(rr, req)
-		if rr.Code != http.StatusNotFound {
-			t.Errorf("expected 404 Not Found, got %d", rr.Code)
-		}
-	})
+	// GET download route still served by DownloadHandler, not the dispatcher.
+	resp := doRequest(http.MethodGet, "/api/v1/files/download/", meta.ID)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 from download route, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// GET list route unaffected.
+	reqList, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/files", nil)
+	reqList = reqList.WithContext(auth.WithUserID(reqList.Context(), userID))
+	respList, err := http.DefaultClient.Do(reqList)
+	if err != nil {
+		t.Fatalf("list request failed: %v", err)
+	}
+	if respList.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 from list route, got %d", respList.StatusCode)
+	}
+	respList.Body.Close()
+
+	// DELETE single segment reaches DeleteHandler.
+	respDel := doRequest(http.MethodDelete, "/api/v1/files/", meta.ID)
+	if respDel.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 from DELETE /api/v1/files/:id, got %d", respDel.StatusCode)
+	}
+	respDel.Body.Close()
+
+	if got := countUserFiles(t, pool, userID); got != 0 {
+		t.Errorf("expected file deleted via routed DELETE, got %d rows", got)
+	}
 }

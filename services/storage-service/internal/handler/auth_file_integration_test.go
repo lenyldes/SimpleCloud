@@ -2,72 +2,38 @@ package handler_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
-	"github.com/google/uuid"
-
-	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/handler"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
 )
 
+// TestMultiTenancyFileIsolation verifies DB-backed file isolation between users:
+// owner-only listing, IDOR download denial and unauthenticated upload rejection.
 func TestMultiTenancyFileIsolation(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "multitenant_file_test_*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
 	engine := storage.NewDiskEngine(tempDir)
-	fileHandler := handler.NewFileHandler(engine, 10*1024*1024)
+	fileHandler := handler.NewFileHandler(engine, pool, 10*1024*1024)
 
-	userA := uuid.New()
-	userB := uuid.New()
+	userA := createTestUser(t, pool, 10*1024*1024)
+	userB := createTestUser(t, pool, 10*1024*1024)
 
-	// Upload file as User A
-	bodyA := &bytes.Buffer{}
-	writerA := multipart.NewWriter(bodyA)
-	partA, _ := writerA.CreateFormFile("file", "userA_secret.txt")
-	_, _ = partA.Write([]byte("User A secret payload"))
-	_ = writerA.Close()
-
-	reqUploadA := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", bodyA)
-	reqUploadA.Header.Set("Content-Type", writerA.FormDataContentType())
-	reqUploadA = reqUploadA.WithContext(auth.WithUserID(reqUploadA.Context(), userA))
-
-	recUploadA := httptest.NewRecorder()
-	fileHandler.UploadHandler(recUploadA, reqUploadA)
-
+	recUploadA := uploadTestFile(t, fileHandler, userA, "userA_secret.txt", []byte("User A secret payload"), "")
 	if recUploadA.Code != http.StatusCreated {
-		t.Fatalf("upload for User A failed, expected 201 Created, got %d", recUploadA.Code)
+		t.Fatalf("upload for User A failed, expected 201 Created, got %d, body: %s", recUploadA.Code, recUploadA.Body.String())
 	}
-
-	var metaA handler.FileMetadata
-	if err := json.NewDecoder(recUploadA.Body).Decode(&metaA); err != nil {
-		t.Fatalf("failed to parse User A upload response: %v", err)
-	}
+	metaA := decodeFileMeta(t, recUploadA)
 
 	t.Run("User B listing files does not see User A file", func(t *testing.T) {
-		reqListB := httptest.NewRequest(http.MethodGet, "/api/v1/files", nil)
-		reqListB = reqListB.WithContext(auth.WithUserID(reqListB.Context(), userB))
-		recListB := httptest.NewRecorder()
-
-		fileHandler.ListHandler(recListB, reqListB)
-
+		recListB := listFilesRequest(fileHandler, userB, "/api/v1/files")
 		if recListB.Code != http.StatusOK {
 			t.Fatalf("expected 200 OK for User B list, got %d", recListB.Code)
 		}
-
-		var filesB []handler.FileMetadata
-		if err := json.NewDecoder(recListB.Body).Decode(&filesB); err != nil {
-			t.Fatalf("failed to decode User B file list: %v", err)
-		}
-
+		filesB := decodeFileList(t, recListB)
 		for _, f := range filesB {
 			if f.ID == metaA.ID {
 				t.Errorf("User B should NOT see User A's file %s in list", metaA.ID)
@@ -76,14 +42,16 @@ func TestMultiTenancyFileIsolation(t *testing.T) {
 	})
 
 	t.Run("User B downloading User A file returns 404 Not Found", func(t *testing.T) {
-		reqDlB := httptest.NewRequest(http.MethodGet, "/api/v1/files/download/"+metaA.ID, nil)
-		reqDlB = reqDlB.WithContext(auth.WithUserID(reqDlB.Context(), userB))
-		recDlB := httptest.NewRecorder()
-
-		fileHandler.DownloadHandler(recDlB, reqDlB)
-
+		recDlB := downloadFileRequest(fileHandler, userB, metaA.ID)
 		if recDlB.Code != http.StatusNotFound {
 			t.Errorf("expected 404 Not Found when User B attempts to download User A file, got %d", recDlB.Code)
+		}
+	})
+
+	t.Run("User B deleting User A file returns 404 Not Found", func(t *testing.T) {
+		recDelB := deleteFileRequest(fileHandler, userB, metaA.ID)
+		if recDelB.Code != http.StatusNotFound {
+			t.Errorf("expected 404 Not Found when User B attempts to delete User A file, got %d", recDelB.Code)
 		}
 	})
 
@@ -94,12 +62,13 @@ func TestMultiTenancyFileIsolation(t *testing.T) {
 		_, _ = part.Write([]byte("anon data"))
 		_ = writer.Close()
 
-		reqUploadAnon := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-		reqUploadAnon.Header.Set("Content-Type", writer.FormDataContentType())
+		req, err := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
+		if err != nil {
+			t.Fatalf("failed to create anonymous upload request: %v", err)
+		}
+		req.Header.Set("Content-Type", writer.FormDataContentType())
 		recUploadAnon := httptest.NewRecorder()
-
-		fileHandler.UploadHandler(recUploadAnon, reqUploadAnon)
-
+		fileHandler.UploadHandler(recUploadAnon, req)
 		if recUploadAnon.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401 Unauthorized for request without user_id in context, got %d", recUploadAnon.Code)
 		}
