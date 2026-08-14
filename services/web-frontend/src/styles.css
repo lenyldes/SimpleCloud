@@ -328,12 +328,28 @@ body {
   transition: width var(--transition-normal);
 }
 
-.quota-progress-fill.warning {
+.quota-progress-fill.warning,
+.quota-warning {
   background-color: var(--color-warning);
 }
 
-.quota-progress-fill.danger {
+.quota-progress-fill.danger,
+.quota-danger {
   background-color: var(--color-danger);
+}
+
+/* Auth Modal */
+#modal-auth {
+  z-index: 200;
+}
+
+.auth-error-msg {
+  background-color: var(--color-danger-light);
+  color: var(--color-danger);
+  padding: 10px 14px;
+  border-radius: var(--border-radius-sm);
+  font-size: var(--font-size-sm);
+  margin-bottom: 16px;
 }
 
 .quota-text {

@@ -2,8 +2,10 @@
 document.addEventListener('DOMContentLoaded', () => {
   // Application State
   const state = {
-    currentPath: '/',
+    currentFolderId: null,
+    breadcrumbs: [{ id: null, name: 'All Files' }],
     files: [],
+    folders: [],
     viewMode: 'grid', // 'grid' | 'list'
     sortBy: 'name',   // 'name' | 'size' | 'date'
     sortOrder: 'asc',
@@ -32,7 +34,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const quotaPercent = document.getElementById('quota-percent');
   const quotaDetails = document.getElementById('quota-details');
 
-  // Modal Elements
+  // Modal Elements - Auth
+  const modalAuth = document.getElementById('modal-auth');
+  const authEmail = document.getElementById('auth-email');
+  const authPassword = document.getElementById('auth-password');
+  const authSubmit = document.getElementById('auth-submit');
+  const authError = document.getElementById('auth-error');
+  const authForm = document.getElementById('auth-form');
+
+  // Modal Elements - Preview & Actions
   const modalLightbox = document.getElementById('modal-lightbox');
   const lightboxImg = document.getElementById('lightbox-img');
   const lightboxDownload = document.getElementById('lightbox-download');
@@ -64,42 +74,120 @@ document.addEventListener('DOMContentLoaded', () => {
   async function init() {
     setupEventListeners();
     await checkAuth();
-    await loadFiles();
+    await loadWorkspaceData();
   }
 
-  // --- Auth Check ---
+  // --- 401 Interceptor Helper ---
+  async function fetchWithAuth(url, options = {}) {
+    options.credentials = 'include';
+    const res = await fetch(url, options);
+    if (res.status === 401) {
+      showAuthModal();
+    }
+    return res;
+  }
+
+  // --- Auth & User Session ---
   async function checkAuth() {
     try {
       const res = await fetch('/api/v1/auth/me', { credentials: 'include' });
       if (res.ok) {
         state.user = await res.json();
-        const avatar = document.getElementById('user-avatar');
-        if (avatar && state.user && state.user.email) {
-          avatar.textContent = state.user.email[0].toUpperCase();
-        }
+        updateUserAvatar();
+      } else if (res.status === 401) {
+        showAuthModal();
       }
     } catch (err) {
       console.warn('Auth check warning:', err);
     }
   }
 
-  // --- API Operations ---
+  function showAuthModal() {
+    if (modalAuth) {
+      modalAuth.classList.remove('hidden');
+      setTimeout(() => modalAuth.classList.add('open'), 10);
+      if (authEmail) authEmail.focus();
+    }
+  }
+
+  function hideAuthModal() {
+    if (modalAuth) {
+      modalAuth.classList.remove('open');
+      setTimeout(() => modalAuth.classList.add('hidden'), 150);
+    }
+    if (authError) authError.classList.add('hidden');
+  }
+
+  function updateUserAvatar() {
+    const avatar = document.getElementById('user-avatar');
+    if (avatar && state.user && state.user.email) {
+      avatar.textContent = state.user.email[0].toUpperCase();
+    }
+  }
+
+  async function handleLogin(email, password) {
+    if (!email || !password) return;
+    try {
+      if (authError) authError.classList.add('hidden');
+      const res = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password })
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        state.user = data.user || { email };
+        updateUserAvatar();
+        hideAuthModal();
+        if (authPassword) authPassword.value = '';
+        showToast('Successfully logged in', 'success');
+        await loadWorkspaceData();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        if (authError) {
+          authError.textContent = errData.error || 'Invalid email or password';
+          authError.classList.remove('hidden');
+        }
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      if (authError) {
+        authError.textContent = 'Network error during login';
+        authError.classList.remove('hidden');
+      }
+    }
+  }
+
+  // --- Workspace Data Loading ---
+  async function loadWorkspaceData() {
+    await Promise.all([loadFiles(), loadFolders()]);
+    updateQuotaDisplay();
+    renderBreadcrumbs();
+    renderWorkspace();
+  }
+
   async function loadFiles() {
     try {
-      const res = await fetch('/api/v1/files', { credentials: 'include' });
-      if (!res.ok) {
-        if (res.status === 401) {
-          showToast('Session expired or unauthorized', 'danger');
-        }
-        throw new Error('Failed to load files');
+      const res = await fetchWithAuth('/api/v1/files');
+      if (res.ok) {
+        const data = await res.json();
+        state.files = Array.isArray(data) ? data : [];
       }
-      const data = await res.json();
-      state.files = Array.isArray(data) ? data : [];
-      updateQuotaDisplay();
-      renderWorkspace();
     } catch (err) {
       console.error('Error loading files:', err);
-      showToast('Error loading files', 'danger');
+    }
+  }
+
+  async function loadFolders() {
+    try {
+      const res = await fetchWithAuth('/api/v1/folders');
+      if (res.ok) {
+        const data = await res.json();
+        state.folders = Array.isArray(data) ? data : [];
+      }
+    } catch (err) {
+      console.error('Error loading folders:', err);
     }
   }
 
@@ -109,13 +197,16 @@ document.addEventListener('DOMContentLoaded', () => {
     for (const file of files) {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('path', state.currentPath);
+      if (state.currentFolderId) {
+        formData.append('folder_id', state.currentFolderId);
+      } else {
+        formData.append('path', state.currentPath);
+      }
 
       try {
         showToast(`Uploading ${file.name}...`);
-        const res = await fetch('/api/v1/files/upload', {
+        const res = await fetchWithAuth('/api/v1/files/upload', {
           method: 'POST',
-          credentials: 'include',
           body: formData
         });
 
@@ -131,26 +222,37 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    await loadFiles();
+    await loadWorkspaceData();
   }
 
   async function handleCreateFolder(folderName) {
     if (!folderName.trim()) return;
 
-    // Simulate folder metadata item
-    const newFolderObj = {
-      id: `folder-${Date.now()}`,
-      filename: folderName.trim(),
-      size: 0,
-      isFolder: true,
-      created_at: new Date().toISOString()
-    };
+    try {
+      const res = await fetchWithAuth('/api/v1/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: folderName.trim(),
+          parent_id: state.currentFolderId
+        })
+      });
 
-    state.files.push(newFolderObj);
-    renderWorkspace();
-    closeModal(modalNewFolder);
-    folderNameInput.value = '';
-    showToast(`Folder "${folderName}" created`, 'success');
+      if (res.ok) {
+        const newFolder = await res.json();
+        state.folders.push(newFolder);
+        closeModal(modalNewFolder);
+        folderNameInput.value = '';
+        showToast(`Folder "${folderName}" created`, 'success');
+        await loadWorkspaceData();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || 'Failed to create folder', 'danger');
+      }
+    } catch (err) {
+      console.error('Create folder error:', err);
+      showToast('Failed to create folder', 'danger');
+    }
   }
 
   // --- Quota Calculation & Display ---
@@ -163,29 +265,93 @@ document.addEventListener('DOMContentLoaded', () => {
     state.quota.used = totalUsed;
     const percentage = Math.min(100, Math.round((state.quota.used / state.quota.total) * 100));
 
-    quotaFill.style.width = `${percentage}%`;
-    quotaPercent.textContent = `${percentage}%`;
-    quotaDetails.textContent = `${formatBytes(state.quota.used)} of ${formatBytes(state.quota.total)} used`;
+    if (quotaFill) quotaFill.style.width = `${percentage}%`;
+    if (quotaPercent) quotaPercent.textContent = `${percentage}%`;
+    if (quotaDetails) quotaDetails.textContent = `${formatBytes(state.quota.used)} of ${formatBytes(state.quota.total)} used`;
 
-    quotaFill.classList.remove('warning', 'danger');
-    if (percentage > 85) {
-      quotaFill.classList.add('danger');
-    } else if (percentage > 70) {
-      quotaFill.classList.add('warning');
+    if (quotaFill) {
+      quotaFill.classList.remove('warning', 'danger', 'quota-warning', 'quota-danger');
+      if (percentage > 85) {
+        quotaFill.classList.add('danger', 'quota-danger');
+      } else if (percentage > 70) {
+        quotaFill.classList.add('warning', 'quota-warning');
+      }
     }
+  }
+
+  // --- Breadcrumbs Navigation ---
+  function renderBreadcrumbs() {
+    if (!breadcrumbsBar) return;
+    let html = '';
+    state.breadcrumbs.forEach((crumb, idx) => {
+      const isLast = idx === state.breadcrumbs.length - 1;
+      if (idx > 0) {
+        html += `<span class="breadcrumb-separator">/</span>`;
+      }
+      if (isLast) {
+        html += `<span class="breadcrumb-item active">${escapeHtml(crumb.name)}</span>`;
+      } else {
+        html += `<span class="breadcrumb-item" data-id="${crumb.id || ''}">${escapeHtml(crumb.name)}</span>`;
+      }
+    });
+    breadcrumbsBar.innerHTML = html;
+
+    breadcrumbsBar.querySelectorAll('.breadcrumb-item:not(.active)').forEach(item => {
+      item.addEventListener('click', () => {
+        const folderId = item.dataset.id || null;
+        navigateToBreadcrumb(folderId);
+      });
+    });
+  }
+
+  function navigateToBreadcrumb(folderId) {
+    const targetIdx = state.breadcrumbs.findIndex(b => b.id === folderId);
+    if (targetIdx !== -1) {
+      state.breadcrumbs = state.breadcrumbs.slice(0, targetIdx + 1);
+      state.currentFolderId = folderId;
+      renderBreadcrumbs();
+      renderWorkspace();
+    }
+  }
+
+  function navigateToFolder(folder) {
+    state.currentFolderId = folder.id;
+    state.breadcrumbs.push({ id: folder.id, name: folder.name || folder.filename });
+    renderBreadcrumbs();
+    renderWorkspace();
   }
 
   // --- Workspace Rendering ---
   function renderWorkspace() {
-    let filteredFiles = state.files.filter(file => {
-      if (state.searchQuery) {
-        return file.filename.toLowerCase().includes(state.searchQuery.toLowerCase());
-      }
-      return true;
-    });
+    // Filter folders and files for current view
+    const currentFolders = state.folders.filter(f => {
+      if (state.currentFolderId) return f.parent_id === state.currentFolderId;
+      return !f.parent_id;
+    }).map(f => ({
+      id: f.id,
+      filename: f.name,
+      isFolder: true,
+      size: 0,
+      created_at: f.created_at
+    }));
 
-    // Sort files
-    filteredFiles.sort((a, b) => {
+    const currentFiles = state.files.filter(f => {
+      if (state.currentFolderId) return f.folder_id === state.currentFolderId;
+      return !f.folder_id;
+    }).map(f => ({
+      ...f,
+      filename: f.filename || f.name,
+      isFolder: false
+    }));
+
+    let allItems = [...currentFolders, ...currentFiles];
+
+    if (state.searchQuery) {
+      allItems = allItems.filter(item => item.filename.toLowerCase().includes(state.searchQuery.toLowerCase()));
+    }
+
+    // Sort items
+    allItems.sort((a, b) => {
       if (a.isFolder && !b.isFolder) return -1;
       if (!a.isFolder && b.isFolder) return 1;
 
@@ -199,13 +365,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    if (filteredFiles.length === 0) {
+    if (allItems.length === 0) {
       workspace.innerHTML = `
         <div class="empty-state">
           <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
           </svg>
-          <div class="empty-title">${state.searchQuery ? 'No matching files' : 'Folder is empty'}</div>
+          <div class="empty-title">${state.searchQuery ? 'No matching items' : 'Folder is empty'}</div>
           <div>${state.searchQuery ? 'Try adjusting your search query' : 'Drag and drop files here or click Upload'}</div>
         </div>
       `;
@@ -213,21 +379,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (state.viewMode === 'grid') {
-      renderGridView(filteredFiles);
+      renderGridView(allItems);
     } else {
-      renderListView(filteredFiles);
+      renderListView(allItems);
     }
   }
 
-  function renderGridView(files) {
+  function renderGridView(items) {
     let html = '<div class="file-grid">';
-    files.forEach(file => {
-      const isImg = isImage(file.filename);
-      const isVid = isVideo(file.filename);
-      const downloadUrl = `/api/v1/files/download/${file.id}`;
+    items.forEach(item => {
+      const downloadUrl = `/api/v1/files/download/${item.id}`;
 
       html += `
-        <div class="grid-card" data-id="${file.id}" data-filename="${escapeHtml(file.filename)}">
+        <div class="grid-card" data-id="${item.id}" data-isfolder="${item.isFolder}">
+          ${!item.isFolder ? `
           <div class="card-actions">
             <a href="${downloadUrl}" class="btn-icon" download title="Download">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -236,30 +401,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
             </a>
-          </div>
+          </div>` : ''}
           <div class="grid-card-icon">
-            ${getFileIconSVG(file)}
+            ${getFileIconSVG(item)}
           </div>
-          <div class="grid-card-name">${escapeHtml(file.filename)}</div>
-          <div class="grid-card-meta">${file.isFolder ? 'Folder' : formatBytes(file.size)}</div>
+          <div class="grid-card-name">${escapeHtml(item.filename)}</div>
+          <div class="grid-card-meta">${item.isFolder ? 'Folder' : formatBytes(item.size)}</div>
         </div>
       `;
     });
     html += '</div>';
     workspace.innerHTML = html;
 
-    // Attach click handlers
     workspace.querySelectorAll('.grid-card').forEach(card => {
       card.addEventListener('click', (e) => {
         if (e.target.closest('.card-actions')) return;
-        const fileId = card.dataset.id;
-        const file = state.files.find(f => f.id === fileId);
-        if (file) handleFileClick(file);
+        const itemId = card.dataset.id;
+        const isFolder = card.dataset.isfolder === 'true';
+        if (isFolder) {
+          const folder = state.folders.find(f => f.id === itemId);
+          if (folder) navigateToFolder(folder);
+        } else {
+          const file = state.files.find(f => f.id === itemId);
+          if (file) handleFileClick(file);
+        }
       });
     });
   }
 
-  function renderListView(files) {
+  function renderListView(items) {
     let html = `
       <table class="file-list">
         <thead>
@@ -273,28 +443,29 @@ document.addEventListener('DOMContentLoaded', () => {
         <tbody>
     `;
 
-    files.forEach(file => {
-      const downloadUrl = `/api/v1/files/download/${file.id}`;
-      const createdDate = file.created_at ? new Date(file.created_at).toLocaleDateString() : '-';
+    items.forEach(item => {
+      const downloadUrl = `/api/v1/files/download/${item.id}`;
+      const createdDate = item.created_at ? new Date(item.created_at).toLocaleDateString() : '-';
 
       html += `
-        <tr data-id="${file.id}">
+        <tr data-id="${item.id}" data-isfolder="${item.isFolder}">
           <td>
             <div class="list-name-col">
-              <div class="list-icon">${getFileIconSVG(file)}</div>
-              <span>${escapeHtml(file.filename)}</span>
+              <div class="list-icon">${getFileIconSVG(item)}</div>
+              <span>${escapeHtml(item.filename)}</span>
             </div>
           </td>
-          <td>${file.isFolder ? '-' : formatBytes(file.size)}</td>
+          <td>${item.isFolder ? '-' : formatBytes(item.size)}</td>
           <td>${createdDate}</td>
           <td>
+            ${!item.isFolder ? `
             <a href="${downloadUrl}" class="btn-icon" download title="Download">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                 <polyline points="7 10 12 15 17 10"></polyline>
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
-            </a>
+            </a>` : '-'}
           </td>
         </tr>
       `;
@@ -306,20 +477,21 @@ document.addEventListener('DOMContentLoaded', () => {
     workspace.querySelectorAll('.file-list tbody tr').forEach(row => {
       row.addEventListener('click', (e) => {
         if (e.target.closest('a')) return;
-        const fileId = row.dataset.id;
-        const file = state.files.find(f => f.id === fileId);
-        if (file) handleFileClick(file);
+        const itemId = row.dataset.id;
+        const isFolder = row.dataset.isfolder === 'true';
+        if (isFolder) {
+          const folder = state.folders.find(f => f.id === itemId);
+          if (folder) navigateToFolder(folder);
+        } else {
+          const file = state.files.find(f => f.id === itemId);
+          if (file) handleFileClick(file);
+        }
       });
     });
   }
 
   // --- Preview & Interaction Modals ---
   async function handleFileClick(file) {
-    if (file.isFolder) {
-      showToast(`Opening folder ${file.filename}`);
-      return;
-    }
-
     const downloadUrl = `/api/v1/files/download/${file.id}`;
 
     if (isImage(file.filename)) {
@@ -338,7 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
       openModal(modalText);
 
       try {
-        const res = await fetch(downloadUrl, { credentials: 'include' });
+        const res = await fetchWithAuth(downloadUrl);
         if (res.ok) {
           const text = await res.text();
           textModalContent.textContent = text;
@@ -349,7 +521,6 @@ document.addEventListener('DOMContentLoaded', () => {
         textModalContent.textContent = 'Error reading file content.';
       }
     } else {
-      // Default download for non-previewable files
       window.open(downloadUrl, '_blank');
     }
   }
@@ -396,87 +567,124 @@ document.addEventListener('DOMContentLoaded', () => {
   function setupEventListeners() {
     setupDragAndDrop();
 
+    // Auth Form
+    if (authForm) {
+      authForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        handleLogin(authEmail.value, authPassword.value);
+      });
+    }
+    if (authSubmit) {
+      authSubmit.addEventListener('click', (e) => {
+        e.preventDefault();
+        handleLogin(authEmail.value, authPassword.value);
+      });
+    }
+
     // Search input
-    searchInput.addEventListener('input', (e) => {
-      state.searchQuery = e.target.value;
-      renderWorkspace();
-    });
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        state.searchQuery = e.target.value;
+        renderWorkspace();
+      });
+    }
 
     // View toggle
-    btnViewGrid.addEventListener('click', () => {
-      state.viewMode = 'grid';
-      btnViewGrid.classList.add('active');
-      btnViewList.classList.remove('active');
-      renderWorkspace();
-    });
+    if (btnViewGrid) {
+      btnViewGrid.addEventListener('click', () => {
+        state.viewMode = 'grid';
+        btnViewGrid.classList.add('active');
+        if (btnViewList) btnViewList.classList.remove('active');
+        renderWorkspace();
+      });
+    }
 
-    btnViewList.addEventListener('click', () => {
-      state.viewMode = 'list';
-      btnViewList.classList.add('active');
-      btnViewGrid.classList.remove('active');
-      renderWorkspace();
-    });
+    if (btnViewList) {
+      btnViewList.addEventListener('click', () => {
+        state.viewMode = 'list';
+        btnViewList.classList.add('active');
+        if (btnViewGrid) btnViewGrid.classList.remove('active');
+        renderWorkspace();
+      });
+    }
 
     // Sorting
-    sortSelect.addEventListener('change', (e) => {
-      state.sortBy = e.target.value;
-      renderWorkspace();
-    });
+    if (sortSelect) {
+      sortSelect.addEventListener('change', (e) => {
+        state.sortBy = e.target.value;
+        renderWorkspace();
+      });
+    }
 
     // Upload button
-    btnUpload.addEventListener('click', () => {
-      fileUploadInput.click();
-    });
+    if (btnUpload) {
+      btnUpload.addEventListener('click', () => {
+        fileUploadInput.click();
+      });
+    }
 
-    fileUploadInput.addEventListener('change', (e) => {
-      if (e.target.files.length > 0) {
-        handleFileUpload(e.target.files);
-      }
-    });
+    if (fileUploadInput) {
+      fileUploadInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+          handleFileUpload(e.target.files);
+        }
+      });
+    }
 
     // New folder modal
-    btnNewFolder.addEventListener('click', () => {
-      openModal(modalNewFolder);
-      folderNameInput.focus();
-    });
+    if (btnNewFolder) {
+      btnNewFolder.addEventListener('click', () => {
+        openModal(modalNewFolder);
+        if (folderNameInput) folderNameInput.focus();
+      });
+    }
 
-    folderModalCancel.addEventListener('click', () => closeModal(modalNewFolder));
-    folderModalClose.addEventListener('click', () => closeModal(modalNewFolder));
-    folderModalCreate.addEventListener('click', () => {
-      handleCreateFolder(folderNameInput.value);
-    });
+    if (folderModalCancel) folderModalCancel.addEventListener('click', () => closeModal(modalNewFolder));
+    if (folderModalClose) folderModalClose.addEventListener('click', () => closeModal(modalNewFolder));
+    if (folderModalCreate) {
+      folderModalCreate.addEventListener('click', () => {
+        handleCreateFolder(folderNameInput.value);
+      });
+    }
 
     // Lightbox close
-    lightboxClose.addEventListener('click', () => closeModal(modalLightbox));
+    if (lightboxClose) lightboxClose.addEventListener('click', () => closeModal(modalLightbox));
 
     // Text modal close
-    textModalClose.addEventListener('click', () => closeModal(modalText));
-    textModalCloseBtn.addEventListener('click', () => closeModal(modalText));
+    if (textModalClose) textModalClose.addEventListener('click', () => closeModal(modalText));
+    if (textModalCloseBtn) textModalCloseBtn.addEventListener('click', () => closeModal(modalText));
 
     // Video modal close
-    videoModalClose.addEventListener('click', () => {
-      videoPlayer.pause();
-      closeModal(modalVideo);
-    });
-    videoModalCloseBtn.addEventListener('click', () => {
-      videoPlayer.pause();
-      closeModal(modalVideo);
-    });
+    if (videoModalClose) {
+      videoModalClose.addEventListener('click', () => {
+        videoPlayer.pause();
+        closeModal(modalVideo);
+      });
+    }
+    if (videoModalCloseBtn) {
+      videoModalCloseBtn.addEventListener('click', () => {
+        videoPlayer.pause();
+        closeModal(modalVideo);
+      });
+    }
   }
 
   // --- Helper Functions ---
   function openModal(modalEl) {
+    if (!modalEl) return;
     modalEl.classList.remove('hidden');
     setTimeout(() => modalEl.classList.add('open'), 10);
   }
 
   function closeModal(modalEl) {
+    if (!modalEl) return;
     modalEl.classList.remove('open');
     setTimeout(() => modalEl.classList.add('hidden'), 150);
   }
 
   function showToast(message, type = 'info') {
     const toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) return;
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     toast.textContent = message;
@@ -502,15 +710,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function isImage(filename) {
-    return /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(filename);
+    return /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(filename || '');
   }
 
   function isVideo(filename) {
-    return /\.(mp4|webm|ogg|mov)$/i.test(filename);
+    return /\.(mp4|webm|ogg|mov)$/i.test(filename || '');
   }
 
   function isText(filename) {
-    return /\.(txt|md|json|js|html|css|go|py|c|cpp|sh|yaml|yml|log)$/i.test(filename);
+    return /\.(txt|md|json|js|html|css|go|py|c|cpp|sh|yaml|yml|log)$/i.test(filename || '');
   }
 
   function getFileIconSVG(file) {

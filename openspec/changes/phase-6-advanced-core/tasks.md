@@ -20,10 +20,10 @@
 
 ## 5. Web Frontend UI & Interactions
 
-- [ ] 5.1 Implement Auth Modal HTML overlay in `index.html` and styles in `styles.css`
-- [ ] 5.2 Implement global 401 response interceptor and interactive Auth Modal logic in `app.js`
-- [ ] 5.3 Implement folder card/row rendering, breadcrumbs navigation bar, and folder creation modal in `app.js`
-- [ ] 5.4 Update sidebar quota progress indicator with percentage calculation and status color thresholds in `app.js` and `styles.css`
+- [x] 5.1 Implement Auth Modal HTML overlay in `index.html` and styles in `styles.css`
+- [x] 5.2 Implement global 401 response interceptor and interactive Auth Modal logic in `app.js`
+- [x] 5.3 Implement folder card/row rendering, breadcrumbs navigation bar, and folder creation modal in `app.js`
+- [x] 5.4 Update sidebar quota progress indicator with percentage calculation and status color thresholds in `app.js` and `styles.css`
 
 ## 6. Audit & Verification
 
