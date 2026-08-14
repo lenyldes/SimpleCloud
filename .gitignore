@@ -34,8 +34,9 @@ go.work.sum
 .agent/
 .openspec/
 
-# Local ideas scratchpad
+# Local ideas scratchpad & design reference assets
 IDEAS.md
+design_ref/
 
 # Local runtime data & storage
 data/
