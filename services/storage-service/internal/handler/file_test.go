@@ -1041,4 +1041,3 @@ func TestFileDownload_ContentDispositionFormat(t *testing.T) {
 		}
 	})
 }
-

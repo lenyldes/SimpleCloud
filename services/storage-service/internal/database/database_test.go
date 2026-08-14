@@ -282,7 +282,7 @@ func TestRunMigrationsFS_Unit(t *testing.T) {
 		pool := getTestPool(t)
 		failingFS := &failingOpenFS{
 			MapFS: fstest.MapFS{
-				"migrations":                      &fstest.MapFile{Mode: fs.ModeDir},
+				"migrations":                       &fstest.MapFile{Mode: fs.ModeDir},
 				"migrations/999999_unreadable.sql": &fstest.MapFile{Data: []byte("SELECT 1;")},
 			},
 			failFile: "migrations/999999_unreadable.sql",
@@ -350,4 +350,3 @@ func TestRunMigrationsFS_Integration(t *testing.T) {
 		_, _ = pool.Exec(ctx, "DELETE FROM schema_migrations WHERE version = '888888_test_applied.sql';")
 	})
 }
-
