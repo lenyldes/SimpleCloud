@@ -57,3 +57,8 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [ ] File and folder sharing with public links (`file_shares`) and read/read-write permissions.
   - [ ] Automated file & folder expiration worker (`expires_at`).
 
+- [ ] **Technical Debt & Backlog**
+  - [ ] `internal/database` statement coverage to 85%+ (O2): inject `fs.FS` into `RunMigrations` instead of the package-level `embed.FS` and test error/rollback branches with `fstest.MapFS` (deferred non-goal of `phase7-hardening-and-polish`; current coverage 71.4%).
+  - [ ] Google Fonts `<link>` in `index.html` is blocked by CSP `style-src 'self'` — self-host the fonts or remove the links (`phase7-hardening-and-polish` audit note).
+  - [ ] L5: `Content-Disposition` with RFC 5987 `filename*` for UTF-8 filenames (remaining `BUGS.md` finding).
+
