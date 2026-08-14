@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: simplecloud
       POSTGRES_USER: simplecloud_user
-      POSTGRES_PASSWORD: simplecloud_dev_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -30,7 +30,9 @@ services:
       - POSTGRES_PORT=5432
       - POSTGRES_DB=simplecloud
       - POSTGRES_USER=simplecloud_user
-      - POSTGRES_PASSWORD=simplecloud_dev_password
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - STORAGE_DIR=/storage
       - DEFAULT_USER_QUOTA_BYTES=5368709120
     volumes:

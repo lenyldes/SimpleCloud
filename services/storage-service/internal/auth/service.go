@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log"
 	"sync"
 	"time"
 
@@ -64,11 +65,9 @@ func hashToken(token string) string {
 
 // SeedAdminUser checks if an admin user exists; if missing, inserts default admin account with bcrypt hashed password.
 func SeedAdminUser(ctx context.Context, pool *pgxpool.Pool, adminEmail, adminPassword string) error {
-	if adminEmail == "" {
-		adminEmail = "admin@simplecloud.local"
-	}
-	if adminPassword == "" {
-		adminPassword = "adminpassword123"
+	if adminEmail == "" || adminPassword == "" {
+		log.Println("[WARN] ADMIN_EMAIL or ADMIN_PASSWORD not configured. Skipping admin account seeding.")
+		return nil
 	}
 
 	var exists bool

@@ -71,6 +71,8 @@ jobs:
           POSTGRES_DB: simplecloud
           POSTGRES_USER: simplecloud_user
           POSTGRES_PASSWORD: simplecloud_dev_password
+          ADMIN_EMAIL: admin@simplecloud.local
+          ADMIN_PASSWORD: adminpassword123
           STORAGE_DIR: /tmp/simplecloud_test_storage
           DEFAULT_USER_QUOTA_BYTES: 5368709120
         run: |
