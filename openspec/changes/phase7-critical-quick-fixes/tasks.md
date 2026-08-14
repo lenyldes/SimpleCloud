@@ -12,20 +12,20 @@
 
 ## 2. [CODE-AGENT] GREEN: фикс C5 (docker-compose)
 
-- [ ] 2.1 Удалить блок `ports` у `postgres` (`docker-compose.yml:9-10`) и у `storage-service` (`:25-26`) целиком; убедиться, что nginx upstream в `web-frontend` ссылается на `storage-service:8080` по имени сети (править ничего не должно требоваться — проверить).
-- [ ] 2.2 Прогнать `docker compose up -d` локально: приложение работает через `32214`, порты `8080`/`5432` на хосте закрыты. Тест 1.4 зелёный.
+- [x] 2.1 Удалить блок `ports` у `postgres` (`docker-compose.yml:9-10`) и у `storage-service` (`:25-26`) целиком; убедиться, что nginx upstream в `web-frontend` ссылается на `storage-service:8080` по имени сети (править ничего не должно требоваться — проверить).
+- [x] 2.2 Прогнать `docker compose up -d` локально: приложение работает через `32214`, порты `8080`/`5432` на хосте закрыты. Тест 1.4 зелёный.
 
 ## 3. [CODE-AGENT] GREEN: фикс C1 (обязательная БД, удаление mock)
 
-- [ ] 3.1 В `cmd/main.go`: пустой `POSTGRES_HOST` → `log.Fatalln`; ошибка `database.InitDB` → `log.Fatalf` (убрать ветки с `auth.NewMockAuthService()`).
-- [ ] 3.2 Полностью удалить `MockAuthService` и `NewMockAuthService` из `internal/auth/service.go`.
-- [ ] 3.3 Проверить `grep -rn "adminpassword123" services/` — ноль совпадений (остаться может только в `.github/workflows/ci.yml`).
-- [ ] 3.4 Тесты 1.1, 1.2 зелёные; `go test ./...` полностью зелёный; `gofmt -l .` пустой.
+- [x] 3.1 В `cmd/main.go`: пустой `POSTGRES_HOST` → `log.Fatalln`; ошибка `database.InitDB` → `log.Fatalf` (убрать ветки с `auth.NewMockAuthService()`).
+- [x] 3.2 Полностью удалить `MockAuthService` и `NewMockAuthService` из `internal/auth/service.go`.
+- [x] 3.3 Проверить `grep -rn "adminpassword123" services/` — ноль совпадений (остаться может только в `.github/workflows/ci.yml`).
+- [x] 3.4 Тесты 1.1, 1.2 зелёные; `go test ./...` полностью зелёный; `gofmt -l .` пустой.
 
 ## 4. [CODE-AGENT] GREEN: фикс C3 (auth/me за middleware)
 
-- [ ] 4.1 В `cmd/main.go:86` заменить `http.HandleFunc("/api/v1/auth/me", ...)` на `http.Handle("/api/v1/auth/me", requireAuth(http.HandlerFunc(authHandler.MeHandler)))`.
-- [ ] 4.2 Проверить, что `MeHandler` возвращает профиль (id, email, quota) из сервиса по `userID` из контекста; тест 1.3 зелёный.
+- [x] 4.1 В `cmd/main.go:86` заменить `http.HandleFunc("/api/v1/auth/me", ...)` на `http.Handle("/api/v1/auth/me", requireAuth(http.HandlerFunc(authHandler.MeHandler)))`.
+- [x] 4.2 Проверить, что `MeHandler` возвращает профиль (id, email, quota) из сервиса по `userID` из контекста; тест 1.3 зелёный.
 
 ## 5. [AUDIT-AGENT] Верификация фазы
 

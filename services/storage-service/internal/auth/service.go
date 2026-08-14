@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -217,96 +216,4 @@ func (s *DBAuthService) StartCleanupWorker(ctx context.Context, interval time.Du
 			}
 		}
 	}()
-}
-
-type MockAuthService struct {
-	mu       sync.Mutex
-	sessions map[string]mockSession
-	users    map[uuid.UUID]*User
-}
-
-type mockSession struct {
-	userID    uuid.UUID
-	expiresAt time.Time
-}
-
-func NewMockAuthService() *MockAuthService {
-	return &MockAuthService{
-		sessions: make(map[string]mockSession),
-		users:    make(map[uuid.UUID]*User),
-	}
-}
-
-func (m *MockAuthService) CreateValidSessionToken(userID uuid.UUID, duration time.Duration) string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	token, _, _ := GenerateSessionToken()
-	m.sessions[token] = mockSession{
-		userID:    userID,
-		expiresAt: time.Now().Add(duration),
-	}
-	m.users[userID] = &User{
-		ID:    userID,
-		Email: "admin@simplecloud.local",
-		Role:  "admin",
-	}
-	return token
-}
-
-func (m *MockAuthService) Login(ctx context.Context, email, password, userAgent, clientIP string) (string, *User, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if email == "admin@simplecloud.local" && password == "adminpassword123" {
-		userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-		token, _, _ := GenerateSessionToken()
-		m.sessions[token] = mockSession{
-			userID:    userID,
-			expiresAt: time.Now().Add(24 * time.Hour),
-		}
-		user := &User{
-			ID:    userID,
-			Email: email,
-			Role:  "admin",
-		}
-		m.users[userID] = user
-		return token, user, nil
-	}
-
-	return "", nil, ErrInvalidCredentials
-}
-
-func (m *MockAuthService) Logout(ctx context.Context, token string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	delete(m.sessions, token)
-	return nil
-}
-
-func (m *MockAuthService) ValidateSession(ctx context.Context, token string) (uuid.UUID, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	sess, ok := m.sessions[token]
-	if !ok || time.Now().After(sess.expiresAt) {
-		return uuid.Nil, ErrUnauthorized
-	}
-	return sess.userID, nil
-}
-
-func (m *MockAuthService) GetUserByID(ctx context.Context, userID uuid.UUID) (*User, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	u, ok := m.users[userID]
-	if ok {
-		return u, nil
-	}
-	return &User{
-		ID:    userID,
-		Email: "admin@simplecloud.local",
-		Role:  "admin",
-	}, nil
 }

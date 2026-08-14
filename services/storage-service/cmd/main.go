@@ -35,43 +35,41 @@ func main() {
 	adminEmail := os.Getenv("ADMIN_EMAIL")
 	adminPassword := os.Getenv("ADMIN_PASSWORD")
 
-	// Connect to database if connection env is set
+	// The database is mandatory: the service must never start without it.
 	dbHost := os.Getenv("POSTGRES_HOST")
-	if dbHost != "" {
-		dbPort := os.Getenv("POSTGRES_PORT")
-		if dbPort == "" {
-			dbPort = "5432"
-		}
-		dbUser := os.Getenv("POSTGRES_USER")
-		dbPass := os.Getenv("POSTGRES_PASSWORD")
-		dbName := os.Getenv("POSTGRES_DB")
-
-		connStr := "postgres://" + dbUser + ":" + dbPass + "@" + dbHost + ":" + dbPort + "/" + dbName + "?sslmode=disable"
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		dbPool, err := database.InitDB(ctx, connStr)
-		if err != nil {
-			log.Printf("Warning: Database initialization failed: %v", err)
-			authSvc = auth.NewMockAuthService()
-		} else {
-			defer dbPool.Close()
-			log.Println("Database connection pool and schema migrations initialized successfully.")
-
-			if err := auth.SeedAdminUser(ctx, dbPool, adminEmail, adminPassword); err != nil {
-				log.Printf("Warning: Admin user seeding failed: %v", err)
-			} else {
-				log.Println("Admin user successfully seeded.")
-			}
-
-			dbAuth := auth.NewDBAuthService(dbPool, 24*time.Hour)
-			dbAuth.StartCleanupWorker(context.Background(), 1*time.Minute)
-			authSvc = dbAuth
-		}
-	} else {
-		authSvc = auth.NewMockAuthService()
+	if dbHost == "" {
+		log.Fatalln("POSTGRES_HOST is not set; refusing to start without database")
 	}
+
+	dbPort := os.Getenv("POSTGRES_PORT")
+	if dbPort == "" {
+		dbPort = "5432"
+	}
+	dbUser := os.Getenv("POSTGRES_USER")
+	dbPass := os.Getenv("POSTGRES_PASSWORD")
+	dbName := os.Getenv("POSTGRES_DB")
+
+	connStr := "postgres://" + dbUser + ":" + dbPass + "@" + dbHost + ":" + dbPort + "/" + dbName + "?sslmode=disable"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	dbPool, err := database.InitDB(ctx, connStr)
+	if err != nil {
+		log.Fatalf("Database initialization failed: %v", err)
+	}
+	defer dbPool.Close()
+	log.Println("Database connection pool and schema migrations initialized successfully.")
+
+	if err := auth.SeedAdminUser(ctx, dbPool, adminEmail, adminPassword); err != nil {
+		log.Printf("Warning: Admin user seeding failed: %v", err)
+	} else {
+		log.Println("Admin user successfully seeded.")
+	}
+
+	dbAuth := auth.NewDBAuthService(dbPool, 24*time.Hour)
+	dbAuth.StartCleanupWorker(context.Background(), 1*time.Minute)
+	authSvc = dbAuth
 
 	authHandler := auth.NewAuthHandler(authSvc)
 	engine := storage.NewDiskEngine(storageDir)
@@ -83,7 +81,7 @@ func main() {
 	http.HandleFunc("/health", handler.HealthHandler)
 	http.HandleFunc("/api/v1/auth/login", authHandler.LoginHandler)
 	http.HandleFunc("/api/v1/auth/logout", authHandler.LogoutHandler)
-	http.HandleFunc("/api/v1/auth/me", authHandler.MeHandler)
+	http.Handle("/api/v1/auth/me", requireAuth(http.HandlerFunc(authHandler.MeHandler)))
 
 	http.Handle("/api/v1/files/upload", requireAuth(http.HandlerFunc(fileHandler.UploadHandler)))
 	http.Handle("/api/v1/files/download/", requireAuth(http.HandlerFunc(fileHandler.DownloadHandler)))
