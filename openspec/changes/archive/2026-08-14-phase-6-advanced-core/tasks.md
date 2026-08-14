@@ -27,7 +27,7 @@
 
 ## 6. Audit & Verification
 
-- [ ] 6.1 Verify code cleanliness, formatting (`gofmt`), and 85%+ statement coverage with `go test -v -cover ./...`
-- [ ] 6.2 Verify Docker Compose build and end-to-end container startup
+- [x] 6.1 Verify code cleanliness, formatting (`gofmt`), and 85%+ statement coverage with `go test -v -cover ./...`
+- [x] 6.2 Verify Docker Compose build and end-to-end container startup
 
 
