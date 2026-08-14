@@ -1,7 +1,7 @@
 ## 1. Database Schema & Migration
 
 - [x] 1.1 `[TEST-AGENT]` Write integration test for database migration `000002_auth_schema.sql` validating `users` schema updates and `user_sessions` table creation.
-- [ ] 1.2 `[CODE-AGENT]` Add migration file `services/storage-service/internal/database/migrations/000002_auth_schema.sql`.
+- [x] 1.2 `[CODE-AGENT]` Add migration file `services/storage-service/internal/database/migrations/000002_auth_schema.sql`.
 
 ## 2. Auth Package Core (`internal/auth`)
 
