@@ -34,13 +34,11 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Auto-deployment workflow (`deploy.yml`): SSH auto-deployment to remote VPS upon merging into `main`.
   - [x] Caddy reverse proxy integration (`test-cloud.lenyldes.ru` -> `localhost:32214`) with automatic Let's Encrypt HTTPS certificates.
 
-- [ ] **Phase 6: Advanced Features**
+- [ ] **Phase 6: Advanced Features (Core & Navigation)**
   - [ ] Frontend Login & Auth Modal UI (automatic modal on 401 Unauthorized).
-  - [ ] Nested folder hierarchy navigation & path-based file browsing.
-  - [ ] Simple text file editor (notepad in browser).
-  - [ ] File and folder sharing with public links and read/read-write permissions.
-  - [ ] Storage quota enforcement per user.
-  - [ ] Automated file & folder expiration worker (`expires_at`).
+  - [ ] Nested folder hierarchy navigation & path-based file browsing (`folders` DB table, CRUD API, breadcrumbs).
+  - [ ] Storage quota enforcement per user (Backend 413 check & Frontend quota usage indicator).
+  - [ ] Automated session expiration worker (Background Go ticker for cleaning expired `user_sessions`).
   - [ ] Changelog API endpoint (`/api/v1/sync/changes`) for future desktop/mobile sync clients.
   - [ ] Custom SVG icons and refined UI design.
 
@@ -48,3 +46,9 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [ ] Guided User Manual Testing Protocol: `[ORCHESTRATOR-AGENT]` provides interactive step-by-step test instructions and report template for user feedback.
   - [ ] User Bug Triage & Resolution: Implement targeted fixes for all user-reported UI/UX issues and edge cases.
   - [ ] Final v1.0 Release Verification: End-to-end audit and release build ready for production use.
+
+- [ ] **Phase 8: Future Extensions & Rich Media Features**
+  - [ ] Simple text file editor (notepad in browser).
+  - [ ] File and folder sharing with public links (`file_shares`) and read/read-write permissions.
+  - [ ] Automated file & folder expiration worker (`expires_at`).
+
