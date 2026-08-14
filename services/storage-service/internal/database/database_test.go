@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/database"
 )
 
@@ -44,6 +46,29 @@ func TestInitDB_ErrorCases(t *testing.T) {
 			t.Errorf("unexpected error message: %v", err)
 		}
 	})
+}
+
+func TestRunMigrations_OfflinePoolError(t *testing.T) {
+	config, err := pgxpool.ParseConfig("postgres://user:pass@127.0.0.1:1/dbname")
+	if err != nil {
+		t.Fatalf("failed to parse config: %v", err)
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		t.Fatalf("failed to create pool: %v", err)
+	}
+	defer pool.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	err = database.RunMigrations(ctx, pool)
+	if err == nil {
+		t.Fatal("expected error executing migration with canceled context, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to execute migration") {
+		t.Errorf("unexpected error message: %v", err)
+	}
 }
 
 func TestInitDB_SuccessAndMigrations(t *testing.T) {

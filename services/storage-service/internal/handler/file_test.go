@@ -575,3 +575,101 @@ func TestFileUploadHandler_PreStreamContentLengthQuotaExceeded(t *testing.T) {
 		t.Errorf("expected 413 Payload Too Large on pre-stream Content-Length check, got %d", rr.Code)
 	}
 }
+
+func TestFileHandler_InvalidMethodsAndErrorBranches(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "file_handler_error_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine := storage.NewDiskEngine(tempDir)
+	fileHandler := handler.NewFileHandler(engine, 10*1024*1024)
+	testUserID := uuid.New()
+
+	t.Run("UploadHandler invalid method returns 405", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/upload", nil)
+		rr := httptest.NewRecorder()
+		fileHandler.UploadHandler(rr, req)
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected 405, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler invalid Content-Length header parses normally", func(t *testing.T) {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, _ := writer.CreateFormFile("file", "valid.txt")
+		_, _ = part.Write([]byte("data"))
+		_ = writer.Close()
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Content-Length", "invalid_number")
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
+
+		rr := httptest.NewRecorder()
+		fileHandler.UploadHandler(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Errorf("expected 201 Created for invalid Content-Length header, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler non-multipart body returns 400", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", strings.NewReader("not a multipart form"))
+		req.Header.Set("Content-Type", "text/plain")
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
+
+		rr := httptest.NewRecorder()
+		fileHandler.UploadHandler(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler missing file field returns 400", func(t *testing.T) {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		_ = writer.WriteField("other_field", "value")
+		_ = writer.Close()
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
+
+		rr := httptest.NewRecorder()
+		fileHandler.UploadHandler(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for missing file field, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DownloadHandler unauthenticated returns 401", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/download/some-id", nil)
+		rr := httptest.NewRecorder()
+		fileHandler.DownloadHandler(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401 Unauthorized, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DownloadHandler empty file ID returns 400", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/download/", nil)
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
+		rr := httptest.NewRecorder()
+		fileHandler.DownloadHandler(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DownloadHandler non-existent file ID returns 404", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/files/download/non-existent-id", nil)
+		req = req.WithContext(auth.WithUserID(req.Context(), testUserID))
+		rr := httptest.NewRecorder()
+		fileHandler.DownloadHandler(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("expected 404 Not Found, got %d", rr.Code)
+		}
+	})
+}
