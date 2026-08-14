@@ -13,12 +13,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
 )
 
 // FileMetadata represents a stored binary file's metadata record.
 type FileMetadata struct {
 	ID        string    `json:"id"`
+	UserID    string    `json:"user_id,omitempty"`
 	Filename  string    `json:"filename"`
 	Size      int64     `json:"size"`
 	SHA256    string    `json:"sha256"`
@@ -46,6 +50,14 @@ func NewFileHandler(engine *storage.DiskEngine, defaultQuota int64) *FileHandler
 func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok || userID == uuid.Nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 		return
 	}
 
@@ -90,6 +102,7 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	meta := FileMetadata{
 		ID:        fileID,
+		UserID:    userID.String(),
 		Filename:  header.Filename,
 		Size:      size,
 		SHA256:    sha256Hex,
@@ -112,12 +125,31 @@ func (fh *FileHandler) DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok || userID == uuid.Nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		return
+	}
+
 	fileID := strings.TrimPrefix(r.URL.Path, "/api/v1/files/download/")
 	fileID = strings.Trim(fileID, "/")
 	if fileID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "missing file ID"})
+		return
+	}
+
+	fh.mu.RLock()
+	meta, exists := fh.files[fileID]
+	fh.mu.RUnlock()
+
+	if exists && meta.UserID != "" && meta.UserID != userID.String() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
 		return
 	}
 
@@ -146,10 +178,6 @@ func (fh *FileHandler) DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fh.mu.RLock()
-	meta, exists := fh.files[fileID]
-	fh.mu.RUnlock()
-
 	filename := fileID
 	if exists && meta.Filename != "" {
 		filename = meta.Filename
@@ -170,10 +198,20 @@ func (fh *FileHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok || userID == uuid.Nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		return
+	}
+
 	fh.mu.RLock()
-	list := make([]FileMetadata, 0, len(fh.files))
+	list := make([]FileMetadata, 0)
 	for _, meta := range fh.files {
-		list = append(list, meta)
+		if meta.UserID == "" || meta.UserID == userID.String() {
+			list = append(list, meta)
+		}
 	}
 	fh.mu.RUnlock()
 

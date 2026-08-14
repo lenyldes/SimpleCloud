@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/database"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/handler"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
@@ -30,6 +31,10 @@ func main() {
 		quotaBytes = 5 * 1024 * 1024 * 1024 // 5GB default
 	}
 
+	var authSvc auth.Service
+	adminEmail := os.Getenv("ADMIN_EMAIL")
+	adminPassword := os.Getenv("ADMIN_PASSWORD")
+
 	// Connect to database if connection env is set
 	dbHost := os.Getenv("POSTGRES_HOST")
 	if dbHost != "" {
@@ -49,19 +54,37 @@ func main() {
 		dbPool, err := database.InitDB(ctx, connStr)
 		if err != nil {
 			log.Printf("Warning: Database initialization failed: %v", err)
+			authSvc = auth.NewMockAuthService()
 		} else {
 			defer dbPool.Close()
 			log.Println("Database connection pool and schema migrations initialized successfully.")
+
+			if err := auth.SeedAdminUser(ctx, dbPool, adminEmail, adminPassword); err != nil {
+				log.Printf("Warning: Admin user seeding failed: %v", err)
+			} else {
+				log.Println("Admin user successfully seeded.")
+			}
+
+			authSvc = auth.NewDBAuthService(dbPool, 24*time.Hour)
 		}
+	} else {
+		authSvc = auth.NewMockAuthService()
 	}
 
+	authHandler := auth.NewAuthHandler(authSvc)
 	engine := storage.NewDiskEngine(storageDir)
 	fileHandler := handler.NewFileHandler(engine, quotaBytes)
 
+	requireAuth := auth.RequireAuth(authSvc)
+
 	http.HandleFunc("/health", handler.HealthHandler)
-	http.HandleFunc("/api/v1/files/upload", fileHandler.UploadHandler)
-	http.HandleFunc("/api/v1/files/download/", fileHandler.DownloadHandler)
-	http.HandleFunc("/api/v1/files", fileHandler.ListHandler)
+	http.HandleFunc("/api/v1/auth/login", authHandler.LoginHandler)
+	http.HandleFunc("/api/v1/auth/logout", authHandler.LogoutHandler)
+	http.HandleFunc("/api/v1/auth/me", authHandler.MeHandler)
+
+	http.Handle("/api/v1/files/upload", requireAuth(http.HandlerFunc(fileHandler.UploadHandler)))
+	http.Handle("/api/v1/files/download/", requireAuth(http.HandlerFunc(fileHandler.DownloadHandler)))
+	http.Handle("/api/v1/files", requireAuth(http.HandlerFunc(fileHandler.ListHandler)))
 
 	log.Printf("Storage service starting on port %s (storageDir: %s, defaultQuota: %d bytes)...", port, storageDir, quotaBytes)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {

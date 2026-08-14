@@ -16,7 +16,7 @@
 ## 4. Admin Seeding & Multi-Tenancy File Handlers
 
 - [x] 4.1 `[TEST-AGENT]` Write integration tests for startup admin account seeding (`ADMIN_EMAIL`/`ADMIN_PASSWORD`) and strict multi-tenant file scoping (`WHERE user_id = $1` on uploads, downloads, listings).
-- [ ] 4.2 `[CODE-AGENT]` Implement admin startup seeding in `main.go` / `InitDB` and update `services/storage-service/internal/handler/file.go` to use context `user_id`.
+- [x] 4.2 `[CODE-AGENT]` Implement admin startup seeding in `main.go` / `InitDB` and update `services/storage-service/internal/handler/file.go` to use context `user_id`.
 
 ## 5. Verification & Compliance Audit
 

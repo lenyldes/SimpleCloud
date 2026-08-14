@@ -62,6 +62,45 @@ func hashToken(token string) string {
 	return hex.EncodeToString(hashBytes[:])
 }
 
+// SeedAdminUser checks if an admin user exists; if missing, inserts default admin account with bcrypt hashed password.
+func SeedAdminUser(ctx context.Context, pool *pgxpool.Pool, adminEmail, adminPassword string) error {
+	if adminEmail == "" {
+		adminEmail = "admin@simplecloud.local"
+	}
+	if adminPassword == "" {
+		adminPassword = "adminpassword123"
+	}
+
+	var exists bool
+	err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE role = 'admin' OR email = $1)`, adminEmail).Scan(&exists)
+	if err != nil {
+		return err
+	}
+
+	if exists {
+		return nil
+	}
+
+	hashedPassword, err := HashPassword(adminPassword)
+	if err != nil {
+		return err
+	}
+
+	adminID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	quotaBytes := int64(50 * 1024 * 1024 * 1024)
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO users (id, email, password_hash, quota_bytes, used_bytes, role, is_active)
+		VALUES ($1, $2, $3, $4, 0, 'admin', true)
+		ON CONFLICT (email) DO UPDATE SET
+			password_hash = EXCLUDED.password_hash,
+			role = EXCLUDED.role,
+			is_active = EXCLUDED.is_active
+	`, adminID, adminEmail, hashedPassword, quotaBytes)
+
+	return err
+}
+
 type DBAuthService struct {
 	pool            *pgxpool.Pool
 	sessionDuration time.Duration
