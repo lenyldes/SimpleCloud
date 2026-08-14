@@ -7,11 +7,15 @@ Provides secure user authentication, session management via HTTP-only cookies an
 ## Requirements
 
 ### Requirement: User Account Schema and Admin Seeding
-The system MUST support user accounts stored in PostgreSQL with bcrypt-hashed passwords and MUST automatically seed an initial administrator account on startup if no admin exists.
+The system MUST support user accounts stored in PostgreSQL with bcrypt-hashed passwords and MUST seed an initial administrator account on startup ONLY IF both `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables are explicitly provided via environment configuration (`.env`). The codebase MUST NOT contain any hardcoded fallback login emails or passwords.
 
 #### Scenario: Successful admin seeding on startup
-- **WHEN** storage service starts with `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables set
-- **THEN** system SHALL check if an admin user exists, and if missing, insert the admin user with a bcrypt-hashed password and default 50 GB storage quota
+- **WHEN** storage service starts with non-empty `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables set
+- **THEN** system SHALL check if an admin user exists, and if missing, insert the admin user with a bcrypt-hashed password derived strictly from `ADMIN_PASSWORD` and default 50 GB storage quota
+
+#### Scenario: Skipping admin seeding when env vars are missing
+- **WHEN** storage service starts with empty or missing `ADMIN_EMAIL` or `ADMIN_PASSWORD` environment variables
+- **THEN** system SHALL log a warning stating that admin seeding was skipped due to missing environment variables and MUST NOT insert any default or fallback admin credentials into PostgreSQL
 
 #### Scenario: Admin login with valid credentials
 - **WHEN** user sends `POST /api/v1/auth/login` with correct email and password
