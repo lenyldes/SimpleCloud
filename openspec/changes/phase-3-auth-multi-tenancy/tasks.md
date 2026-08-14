@@ -6,12 +6,12 @@
 ## 2. Auth Package Core (`internal/auth`)
 
 - [x] 2.1 `[TEST-AGENT]` Write unit tests in `services/storage-service/internal/auth/auth_test.go` for bcrypt password hashing, session token creation, and typed context helpers (`WithUserID`, `GetUserIDFromContext`).
-- [ ] 2.2 `[CODE-AGENT]` Implement `services/storage-service/internal/auth/context.go` and `services/storage-service/internal/auth/service.go`.
+- [x] 2.2 `[CODE-AGENT]` Implement `services/storage-service/internal/auth/context.go` and `services/storage-service/internal/auth/service.go`.
 
 ## 3. Auth HTTP Handlers & Middleware (`internal/auth`)
 
 - [x] 3.1 `[TEST-AGENT]` Write HTTP integration tests for `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/me`, and `RequireAuth` middleware (testing Cookie and Bearer header resolution).
-- [ ] 3.2 `[CODE-AGENT]` Implement `services/storage-service/internal/auth/handler.go` and `services/storage-service/internal/auth/middleware.go`.
+- [x] 3.2 `[CODE-AGENT]` Implement `services/storage-service/internal/auth/handler.go` and `services/storage-service/internal/auth/middleware.go`.
 
 ## 4. Admin Seeding & Multi-Tenancy File Handlers
 
