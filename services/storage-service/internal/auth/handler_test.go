@@ -16,13 +16,23 @@ import (
 )
 
 func TestAuthHandlersAndMiddleware(t *testing.T) {
-	svc := auth.NewMockAuthService()
+	svc := newStubAuthService()
+
+	testUser := auth.User{
+		ID:         uuid.New(),
+		Email:      "tester@example.com",
+		Role:       "user",
+		QuotaBytes: 1 << 30,
+	}
+	const testPassword = "test-password-123"
+	svc.AddUser(testUser, testPassword)
+
 	handler := auth.NewAuthHandler(svc)
 
 	t.Run("Login success sets HttpOnly cookie", func(t *testing.T) {
 		loginPayload := map[string]string{
-			"email":    "admin@simplecloud.local",
-			"password": "adminpassword123",
+			"email":    testUser.Email,
+			"password": testPassword,
 		}
 		body, _ := json.Marshal(loginPayload)
 
@@ -55,7 +65,7 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 
 	t.Run("Login failure returns 401", func(t *testing.T) {
 		loginPayload := map[string]string{
-			"email":    "admin@simplecloud.local",
+			"email":    testUser.Email,
 			"password": "wrongpassword",
 		}
 		body, _ := json.Marshal(loginPayload)
@@ -124,7 +134,7 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 	})
 
 	t.Run("RequireAuth Middleware allows Bearer token request", func(t *testing.T) {
-		validToken := svc.CreateValidSessionToken(uuid.New(), 24*time.Hour)
+		validToken := svc.IssueSession(testUser.ID, 24*time.Hour)
 
 		protectedHandler := auth.RequireAuth(svc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID, ok := auth.GetUserIDFromContext(r.Context())
@@ -147,7 +157,7 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 	})
 
 	t.Run("RequireAuth Middleware allows Cookie auth request", func(t *testing.T) {
-		validToken := svc.CreateValidSessionToken(uuid.New(), 24*time.Hour)
+		validToken := svc.IssueSession(testUser.ID, 24*time.Hour)
 
 		protectedHandler := auth.RequireAuth(svc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -165,7 +175,7 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 	})
 
 	t.Run("Logout clears session cookie", func(t *testing.T) {
-		validToken := svc.CreateValidSessionToken(uuid.New(), 24*time.Hour)
+		validToken := svc.IssueSession(testUser.ID, 24*time.Hour)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
 		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validToken})
@@ -192,7 +202,7 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 	})
 
 	t.Run("Logout with Bearer token", func(t *testing.T) {
-		validToken := svc.CreateValidSessionToken(uuid.New(), 24*time.Hour)
+		validToken := svc.IssueSession(testUser.ID, 24*time.Hour)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
 		req.Header.Set("Authorization", "Bearer "+validToken)
@@ -217,8 +227,7 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 	})
 
 	t.Run("MeHandler returns user profile for authenticated user", func(t *testing.T) {
-		userID := uuid.New()
-		ctx := auth.WithUserID(context.Background(), userID)
+		ctx := auth.WithUserID(context.Background(), testUser.ID)
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil).WithContext(ctx)
 		rec := httptest.NewRecorder()
@@ -230,16 +239,23 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 		}
 
 		var resp struct {
-			ID    string `json:"id"`
-			Email string `json:"email"`
-			Role  string `json:"role"`
+			ID         string `json:"id"`
+			Email      string `json:"email"`
+			Role       string `json:"role"`
+			QuotaBytes int64  `json:"quota_bytes"`
 		}
 		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 			t.Fatalf("failed to decode MeHandler response: %v", err)
 		}
 
-		if resp.ID != userID.String() {
-			t.Errorf("expected ID %s, got %s", userID, resp.ID)
+		if resp.ID != testUser.ID.String() {
+			t.Errorf("expected ID %s, got %s", testUser.ID, resp.ID)
+		}
+		if resp.Email != testUser.Email {
+			t.Errorf("expected email %s, got %s", testUser.Email, resp.Email)
+		}
+		if resp.QuotaBytes != testUser.QuotaBytes {
+			t.Errorf("expected quota_bytes %d, got %d", testUser.QuotaBytes, resp.QuotaBytes)
 		}
 	})
 

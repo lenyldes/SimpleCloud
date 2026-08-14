@@ -75,29 +75,3 @@ func TestStartCleanupWorker(t *testing.T) {
 	svc.StartCleanupWorker(ctx, 1*time.Second)
 	time.Sleep(10 * time.Millisecond)
 }
-
-func TestMockAuthService_GetUserByID(t *testing.T) {
-	mock := auth.NewMockAuthService()
-	userID := uuid.New()
-	token := mock.CreateValidSessionToken(userID, 1*time.Hour)
-	if token == "" {
-		t.Fatal("expected non-empty token")
-	}
-
-	user, err := mock.GetUserByID(context.Background(), userID)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if user.ID != userID {
-		t.Errorf("expected user ID %s, got %s", userID, user.ID)
-	}
-
-	unknownID := uuid.New()
-	defaultUser, err := mock.GetUserByID(context.Background(), unknownID)
-	if err != nil {
-		t.Fatalf("expected no error for unknown ID in mock, got %v", err)
-	}
-	if defaultUser.ID != unknownID {
-		t.Errorf("expected default user ID %s, got %s", unknownID, defaultUser.ID)
-	}
-}
