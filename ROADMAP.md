@@ -34,6 +34,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Auto-deployment workflow (`deploy.yml`): SSH auto-deployment to remote VPS upon merging into `main`.
   - [x] Caddy reverse proxy integration (`test-cloud.lenyldes.ru` -> `localhost:32214`) with automatic Let's Encrypt HTTPS certificates.
   - [x] Security & secrets hardening: disabled fallback credentials across Go seeding, Docker Compose, and CI/CD.
+  - [x] Nginx security hardening & rate limiting (`X-Frame-Options`, `CSP`, 5r/s login rate limit, 30r/s API rate limit).
 
 - [x] **Phase 6: Advanced Features (Core & Navigation)**
   - [x] Backend folder hierarchy & DB schema (`folders` table, migrations, CRUD API).
