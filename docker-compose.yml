@@ -47,9 +47,16 @@ services:
     container_name: simplecloud-web-frontend
     ports:
       - "32214:80"
+    networks:
+      - default
+      - caddy-public
     depends_on:
       - storage-service
     restart: unless-stopped
+
+networks:
+  caddy-public:
+    external: true
 
 volumes:
   postgres_data:
