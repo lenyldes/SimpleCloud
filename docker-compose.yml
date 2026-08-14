@@ -23,7 +23,7 @@ services:
       dockerfile: Dockerfile
     container_name: simplecloud-storage-service
     ports:
-      - "32214:8080"
+      - "8080:8080"
     environment:
       - PORT=8080
       - POSTGRES_HOST=postgres
@@ -40,6 +40,18 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  web-frontend:
+    build:
+      context: ./services/web-frontend
+      dockerfile: Dockerfile
+    container_name: simplecloud-web-frontend
+    ports:
+      - "32214:80"
+    depends_on:
+      - storage-service
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+
 
