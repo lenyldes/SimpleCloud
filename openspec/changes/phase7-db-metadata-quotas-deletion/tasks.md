@@ -30,23 +30,23 @@
 
 ## 5. GREEN: FileHandler на PostgreSQL (C2, C4, M8)
 
-- [ ] 5.1 `NewFileHandler(engine, pool, defaultQuota)` с обязательным `*pgxpool.Pool`; удалить `mu`/`files` map из `FileHandler`
-- [ ] 5.2 `UploadHandler`: транзакция — `SELECT used_bytes, quota_bytes ... FOR UPDATE`, предпроверка Content-Length против остатка, `engine.Save` с лимитом остатка, `INSERT INTO files` + `UPDATE users SET used_bytes = used_bytes + $size`, commit; при ошибке после записи на диск — `os.Remove` + rollback + 500
-- [ ] 5.3 `DownloadHandler`: `SELECT user_id, filename FROM files WHERE id = $1`; нет записи или чужой владелец → единый 404
-- [ ] 5.4 `ListHandler`: SQL-выборка файлов владельца с семантикой `?folder_id=` (отсутствие/пусто → корень)
-- [ ] 5.5 `DeleteHandler` файла: валидация UUID, ownership-check, транзакция `DELETE FROM files` + `UPDATE users SET used_bytes = GREATEST(used_bytes - $size, 0)`, затем `os.Remove(storage_path)` с логированием ошибок
+- [x] 5.1 `NewFileHandler(engine, pool, defaultQuota)` с обязательным `*pgxpool.Pool`; удалить `mu`/`files` map из `FileHandler`
+- [x] 5.2 `UploadHandler`: транзакция — `SELECT used_bytes, quota_bytes ... FOR UPDATE`, предпроверка Content-Length против остатка, `engine.Save` с лимитом остатка, `INSERT INTO files` + `UPDATE users SET used_bytes = used_bytes + $size`, commit; при ошибке после записи на диск — `os.Remove` + rollback + 500
+- [x] 5.3 `DownloadHandler`: `SELECT user_id, filename FROM files WHERE id = $1`; нет записи или чужой владелец → единый 404
+- [x] 5.4 `ListHandler`: SQL-выборка файлов владельца с семантикой `?folder_id=` (отсутствие/пусто → корень)
+- [x] 5.5 `DeleteHandler` файла: валидация UUID, ownership-check, транзакция `DELETE FROM files` + `UPDATE users SET used_bytes = GREATEST(used_bytes - $size, 0)`, затем `os.Remove(storage_path)` с логированием ошибок
 
 ## 6. GREEN: FolderHandler на PostgreSQL (C2, H4, M7)
 
-- [ ] 6.1 Типизированный конструктор `NewFolderHandler(pool, engine)`; удалить `mu`/`folders` map и `collectSubfoldersLocked`
-- [ ] 6.2 `CreateHandler`: валидация UUID `parent_id` → 400; проверка родителя SQL-запросом с `user_id`; `INSERT` только в БД
-- [ ] 6.3 `ListHandler`: SQL-выборка папок владельца с семантикой `?parent_id=`
-- [ ] 6.4 `DeleteHandler`: ownership-check (чужая/неизвестная → 404), recursive CTE по поддереву, сбор файлов, одна транзакция (`DELETE FROM files`, `DELETE FROM folders`, декремент `used_bytes` с clamp), затем физическое удаление шардов с диска (best-effort, лог)
+- [x] 6.1 Типизированный конструктор `NewFolderHandler(pool, engine)`; удалить `mu`/`folders` map и `collectSubfoldersLocked`
+- [x] 6.2 `CreateHandler`: валидация UUID `parent_id` → 400; проверка родителя SQL-запросом с `user_id`; `INSERT` только в БД
+- [x] 6.3 `ListHandler`: SQL-выборка папок владельца с семантикой `?parent_id=`
+- [x] 6.4 `DeleteHandler`: ownership-check (чужая/неизвестная → 404), recursive CTE по поддереву, сбор файлов, одна транзакция (`DELETE FROM files`, `DELETE FROM folders`, декремент `used_bytes` с clamp), затем физическое удаление шардов с диска (best-effort, лог)
 
 ## 7. GREEN: роутинг и сборка (H4)
 
-- [ ] 7.1 `cmd/main.go`: передать `dbPool` в `NewFileHandler` и `NewFolderHandler`; зарегистрировать `DELETE /api/v1/files/:id` (диспетчер по методу на `/api/v1/files/`, без конфликта с `/api/v1/files/download/`)
-- [ ] 7.2 Убедиться, что проект собирается: `go build ./...` и `gofmt -l .` пустой
+- [x] 7.1 `cmd/main.go`: передать `dbPool` в `NewFileHandler` и `NewFolderHandler`; зарегистрировать `DELETE /api/v1/files/:id` (диспетчер по методу на `/api/v1/files/`, без конфликта с `/api/v1/files/download/`)
+- [x] 7.2 Убедиться, что проект собирается: `go build ./...` и `gofmt -l .` пустой
 
 ## 8. Верификация
 
