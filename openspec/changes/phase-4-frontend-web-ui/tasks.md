@@ -1,6 +1,6 @@
 ## 1. Test Agent Tasks (RED Phase)
 
-- [ ] 1.1 Add frontend integration test suite verifying static asset delivery and proxy endpoint accessibility
+- [x] 1.1 Add frontend integration test suite verifying static asset delivery and proxy endpoint accessibility
 
 ## 2. Web Frontend Structure & Docker Setup (GREEN Phase)
 
