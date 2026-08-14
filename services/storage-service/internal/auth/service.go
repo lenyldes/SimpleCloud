@@ -20,11 +20,13 @@ var (
 	ErrUserNotFound       = errors.New("user not found")
 )
 
+const dummyHash = "$2a$10$7EqJtq986P4Xb.M.V3yNge.U4S5V3yNge.U4S5V3yNge.U4S5V3yNge"
+
 type User struct {
 	ID         uuid.UUID `json:"id"`
 	Email      string    `json:"email"`
-	QuotaBytes int64     `json:"quota_bytes,omitempty"`
-	UsedBytes  int64     `json:"used_bytes,omitempty"`
+	QuotaBytes int64     `json:"quota_bytes"`
+	UsedBytes  int64     `json:"used_bytes"`
 	Role       string    `json:"role"`
 	IsActive   bool      `json:"is_active,omitempty"`
 }
@@ -125,6 +127,7 @@ func (s *DBAuthService) Login(ctx context.Context, email, password, userAgent, c
 	).Scan(&user.ID, &user.Email, &passwordHash, &user.Role, &user.IsActive, &user.QuotaBytes, &user.UsedBytes)
 
 	if err != nil {
+		_ = CheckPasswordHash(password, dummyHash)
 		return "", nil, ErrInvalidCredentials
 	}
 

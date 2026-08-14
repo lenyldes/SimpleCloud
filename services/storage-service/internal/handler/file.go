@@ -108,9 +108,18 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, remainingQuota+1024*1024)
+
 	// Limit multipart header reading to 32MB
 	err = r.ParseMultipartForm(32 << 20)
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "payload too large"})
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid multipart form"})
@@ -236,6 +245,13 @@ func (fh *FileHandler) DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "missing file ID"})
+		return
+	}
+
+	if _, err := uuid.Parse(fileID); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid file ID"})
 		return
 	}
 
@@ -405,8 +421,8 @@ func (fh *FileHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	parsedFileID, err := uuid.Parse(fileID)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid file ID"})
 		return
 	}
 

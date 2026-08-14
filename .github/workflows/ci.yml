@@ -37,6 +37,7 @@ jobs:
 
   test:
     name: Run Go Tests
+    needs: [lint]
     runs-on: ubuntu-latest
 
     services:

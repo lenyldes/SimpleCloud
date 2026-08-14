@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var (
@@ -20,7 +21,7 @@ var (
 
 // GetShardedPath calculates 2-level subfolder path: /baseDir/<uuid[0..1]>/<uuid[2..3]>/<uuid>
 func GetShardedPath(baseDir string, fileID string) (string, error) {
-	if len(fileID) < 4 {
+	if len(fileID) < 4 || strings.ContainsAny(fileID, "/\\") || filepath.Base(fileID) != fileID {
 		return "", ErrInvalidFileID
 	}
 	sub1 := fileID[0:2]

@@ -54,6 +54,8 @@ func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	var req struct {
 		Name     string  `json:"name"`
 		ParentID *string `json:"parent_id"`
@@ -242,8 +244,8 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	parsedFolderID, err := uuid.Parse(folderID)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "folder not found"})
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid folder ID"})
 		return
 	}
 

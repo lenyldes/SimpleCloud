@@ -5,8 +5,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
@@ -14,6 +16,36 @@ import (
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/handler"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
 )
+
+func NewServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      5 * time.Minute,
+		IdleTimeout:       60 * time.Second,
+	}
+}
+
+func RunServer(ctx context.Context, srv *http.Server) error {
+	errCh := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+		close(errCh)
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	}
+}
 
 func main() {
 	port := os.Getenv("PORT")
@@ -50,7 +82,7 @@ func main() {
 	dbPass := os.Getenv("POSTGRES_PASSWORD")
 	dbName := os.Getenv("POSTGRES_DB")
 
-	connStr := "postgres://" + dbUser + ":" + dbPass + "@" + dbHost + ":" + dbPort + "/" + dbName + "?sslmode=disable"
+	connStr := database.BuildDSN(dbUser, dbPass, dbHost, dbPort, dbName, "disable")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -68,35 +100,38 @@ func main() {
 		log.Println("Admin user successfully seeded.")
 	}
 
-	dbAuth := auth.NewDBAuthService(dbPool, 24*time.Hour)
+	const sessionTTL = 24 * time.Hour
+
+	dbAuth := auth.NewDBAuthService(dbPool, sessionTTL)
 	dbAuth.StartCleanupWorker(context.Background(), 1*time.Minute)
 	authSvc = dbAuth
 
-	authHandler := auth.NewAuthHandler(authSvc)
+	authHandler := auth.NewAuthHandlerWithTTL(authSvc, sessionTTL)
 	engine := storage.NewDiskEngine(storageDir)
 	fileHandler := handler.NewFileHandler(engine, dbPool, quotaBytes)
 	folderHandler := handler.NewFolderHandler(dbPool, engine)
 
 	requireAuth := auth.RequireAuth(authSvc)
 
-	http.HandleFunc("/health", handler.HealthHandler)
-	http.HandleFunc("/api/v1/auth/login", authHandler.LoginHandler)
-	http.HandleFunc("/api/v1/auth/logout", authHandler.LogoutHandler)
-	http.Handle("/api/v1/auth/me", requireAuth(http.HandlerFunc(authHandler.MeHandler)))
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", handler.HealthHandler)
+	mux.Handle("/api/v1/auth/login", auth.RequireSameOrigin(http.HandlerFunc(authHandler.LoginHandler)))
+	mux.Handle("/api/v1/auth/logout", auth.RequireSameOrigin(http.HandlerFunc(authHandler.LogoutHandler)))
+	mux.Handle("/api/v1/auth/me", requireAuth(http.HandlerFunc(authHandler.MeHandler)))
 
-	http.Handle("/api/v1/files/upload", requireAuth(http.HandlerFunc(fileHandler.UploadHandler)))
-	http.Handle("/api/v1/files/download/", requireAuth(http.HandlerFunc(fileHandler.DownloadHandler)))
-	http.Handle("/api/v1/files", requireAuth(http.HandlerFunc(fileHandler.ListHandler)))
-	http.Handle("/api/v1/files/", requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/api/v1/files/upload", requireAuth(auth.RequireSameOrigin(http.HandlerFunc(fileHandler.UploadHandler))))
+	mux.Handle("/api/v1/files/download/", requireAuth(http.HandlerFunc(fileHandler.DownloadHandler)))
+	mux.Handle("/api/v1/files", requireAuth(http.HandlerFunc(fileHandler.ListHandler)))
+	mux.Handle("/api/v1/files/", requireAuth(auth.RequireSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		segment := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/files/"), "/")
 		if r.Method == http.MethodDelete && segment != "" && !strings.Contains(segment, "/") {
 			fileHandler.DeleteHandler(w, r)
 			return
 		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	})))
+	}))))
 
-	http.Handle("/api/v1/folders", requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/api/v1/folders", requireAuth(auth.RequireSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			folderHandler.CreateHandler(w, r)
 		} else if r.Method == http.MethodGet {
@@ -104,11 +139,16 @@ func main() {
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	})))
-	http.Handle("/api/v1/folders/", requireAuth(http.HandlerFunc(folderHandler.DeleteHandler)))
+	}))))
+	mux.Handle("/api/v1/folders/", requireAuth(auth.RequireSameOrigin(http.HandlerFunc(folderHandler.DeleteHandler))))
+
+	srv := NewServer(":"+port, mux)
+
+	stopCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	log.Printf("Storage service starting on port %s (storageDir: %s, defaultQuota: %d bytes)...", port, storageDir, quotaBytes)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+	if err := RunServer(stopCtx, srv); err != nil {
+		log.Fatalf("Server exited with error: %v", err)
 	}
 }

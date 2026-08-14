@@ -93,6 +93,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/v1/auth/me', { credentials: 'include' });
       if (res.ok) {
         state.user = await res.json();
+        if (state.user) {
+          if (typeof state.user.used_bytes === 'number') state.quota.used = state.user.used_bytes;
+          if (typeof state.user.quota_bytes === 'number') state.quota.total = state.user.quota_bytes;
+        }
         updateUserAvatar();
       } else if (res.status === 401) {
         showAuthModal();
@@ -137,7 +141,11 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        state.user = data.user || { email };
+        state.user = data.user || data;
+        if (state.user) {
+          if (typeof state.user.used_bytes === 'number') state.quota.used = state.user.used_bytes;
+          if (typeof state.user.quota_bytes === 'number') state.quota.total = state.user.quota_bytes;
+        }
         updateUserAvatar();
         hideAuthModal();
         if (authPassword) authPassword.value = '';
@@ -161,6 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Workspace Data Loading ---
   async function loadWorkspaceData() {
+    await checkAuth();
     await Promise.all([loadFiles(), loadFolders()]);
     updateQuotaDisplay();
     renderBreadcrumbs();
@@ -199,8 +208,6 @@ document.addEventListener('DOMContentLoaded', () => {
       formData.append('file', file);
       if (state.currentFolderId) {
         formData.append('folder_id', state.currentFolderId);
-      } else {
-        formData.append('path', state.currentPath);
       }
 
       try {
@@ -257,12 +264,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Quota Calculation & Display ---
   function updateQuotaDisplay() {
-    let totalUsed = 0;
-    state.files.forEach(file => {
-      totalUsed += (file.size || 0);
-    });
+    if (state.user && typeof state.user.used_bytes === 'number') {
+      state.quota.used = state.user.used_bytes;
+      if (typeof state.user.quota_bytes === 'number') {
+        state.quota.total = state.user.quota_bytes;
+      }
+    } else {
+      let totalUsed = 0;
+      state.files.forEach(file => {
+        totalUsed += (file.size || 0);
+      });
+      state.quota.used = totalUsed;
+    }
 
-    state.quota.used = totalUsed;
     const percentage = Math.min(100, Math.round((state.quota.used / state.quota.total) * 100));
 
     if (quotaFill) quotaFill.style.width = `${percentage}%`;
@@ -626,7 +640,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (fileUploadInput) {
       fileUploadInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-          handleFileUpload(e.target.files);
+          const files = e.target.files;
+          fileUploadInput.value = '';
+          handleFileUpload(files);
         }
       });
     }

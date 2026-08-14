@@ -3,6 +3,8 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -10,13 +12,56 @@ import (
 const SessionCookieName = "simplecloud_session"
 
 type AuthHandler struct {
-	svc Service
+	svc        Service
+	sessionTTL time.Duration
 }
 
 func NewAuthHandler(svc Service) *AuthHandler {
 	return &AuthHandler{
-		svc: svc,
+		svc:        svc,
+		sessionTTL: 24 * time.Hour,
 	}
+}
+
+func NewAuthHandlerWithTTL(svc Service, ttl time.Duration) *AuthHandler {
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	return &AuthHandler{
+		svc:        svc,
+		sessionTTL: ttl,
+	}
+}
+
+func isCookieSecure() bool {
+	val := os.Getenv("COOKIE_SECURE")
+	return val != "false"
+}
+
+func RequireSameOrigin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			u, err := url.Parse(origin)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid origin header"})
+				return
+			}
+			expectedHost := r.Header.Get("X-Forwarded-Host")
+			if expectedHost == "" {
+				expectedHost = r.Host
+			}
+			if !strings.EqualFold(u.Host, expectedHost) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "CSRF origin mismatch"})
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 type loginRequest struct {
@@ -29,6 +74,8 @@ func (h *AuthHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -49,13 +96,19 @@ func (h *AuthHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ttl := h.sessionTTL
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isCookieSecure(),
 		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Now().Add(24 * time.Hour),
+		Expires:  time.Now().Add(ttl),
 	})
 
 	w.Header().Set("Content-Type", "application/json")
@@ -88,6 +141,8 @@ func (h *AuthHandler) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isCookieSecure(),
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})

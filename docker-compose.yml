@@ -44,7 +44,7 @@ services:
       dockerfile: Dockerfile
     container_name: simplecloud-web-frontend
     ports:
-      - "32214:80"
+      - "32214:8080"
     networks:
       - default
       - caddy-public
