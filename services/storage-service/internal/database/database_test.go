@@ -210,4 +210,3 @@ func TestSchemaMigrationsTable(t *testing.T) {
 		t.Errorf("expected count of schema_migrations to stay at %d on rerun, got %d", count, countAfter)
 	}
 }
-

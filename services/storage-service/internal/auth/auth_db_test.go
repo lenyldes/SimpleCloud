@@ -253,4 +253,3 @@ func TestTimingSafeLogin(t *testing.T) {
 		t.Errorf("expected timing-safe login with non-existent email to execute bcrypt check (elapsed >= 2ms), took %v", elapsed)
 	}
 }
-

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -245,4 +247,3 @@ func TestServerGracefulShutdown(t *testing.T) {
 		t.Fatal("server failed to shutdown gracefully within 5 seconds")
 	}
 }
-

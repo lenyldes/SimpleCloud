@@ -477,4 +477,3 @@ func TestAuthHandlersAndMiddleware(t *testing.T) {
 		}
 	})
 }
-
