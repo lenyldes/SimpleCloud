@@ -227,4 +227,3 @@ func TestDBAuthService_StartCleanupWorker(t *testing.T) {
 	time.Sleep(35 * time.Millisecond)
 	workerCancel()
 }
-

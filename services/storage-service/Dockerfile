@@ -11,7 +11,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o storage-service ./cmd/main.go
 
 # Stage 2: Minimal runtime image
-FROM alpine:3.19
+FROM alpine:3.21
 
 RUN apk --no-cache add ca-certificates
 

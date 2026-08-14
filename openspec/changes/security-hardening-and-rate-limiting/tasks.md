@@ -5,7 +5,7 @@
 
 ## 2. Code Implementation Tasks (GREEN State)
 
-- [ ] 2.1 Update `services/web-frontend/nginx.conf` to add HTTP security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy`)
-- [ ] 2.2 Update `services/web-frontend/nginx.conf` to define `limit_req_zone` for `/api/v1/auth/login` (5r/s) and `/api/` (30r/s) returning 429
-- [ ] 2.3 Update `services/storage-service/Dockerfile` base Golang image tag to resolve `govulncheck` vulnerabilities
-- [ ] 2.4 Run `go test -v -cover ./...` and `govulncheck ./...` to verify all tests pass and coverage threshold (>= 85%) is maintained
+- [x] 2.1 Update `services/web-frontend/nginx.conf` to add HTTP security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy`)
+- [x] 2.2 Update `services/web-frontend/nginx.conf` to define `limit_req_zone` for `/api/v1/auth/login` (5r/s) and `/api/` (30r/s) returning 429
+- [x] 2.3 Update `services/storage-service/Dockerfile` base Golang image tag to resolve `govulncheck` vulnerabilities
+- [x] 2.4 Run `go test -v -cover ./...` and `govulncheck ./...` to verify all tests pass and coverage threshold (>= 85%) is maintained

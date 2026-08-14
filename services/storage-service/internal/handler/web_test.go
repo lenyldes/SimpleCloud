@@ -178,4 +178,3 @@ func TestNginxRateLimitingConfig(t *testing.T) {
 		})
 	}
 }
-

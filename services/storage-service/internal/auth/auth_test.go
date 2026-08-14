@@ -101,4 +101,3 @@ func TestMockAuthService_GetUserByID(t *testing.T) {
 		t.Errorf("expected default user ID %s, got %s", unknownID, defaultUser.ID)
 	}
 }
-
