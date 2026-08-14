@@ -47,7 +47,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
 - [ ] **Phase 7: Manual User Testing, Bugfixing & Product Polish**
   - [x] Critical Quick Fixes & Port Hardening (Part 1 of Phase 7): fixed C5, C1, C3 in `phase7-critical-quick-fixes`.
   - [x] DB Metadata Persistence, Quotas Enforcement & Deletion Engine (Part 2 of Phase 7): fixed C2, C4, M8, H4, M7 in `phase7-db-metadata-quotas-deletion`.
-  - [ ] Remaining Audit Fixes from [`BUGS.md`](BUGS.md) (Part 3 of Phase 7): H1-H3, H5, M1-M6, L1-L4 + fail-fast CI/CD in `phase7-hardening-and-polish` (specs proposed, implementation pending).
+  - [x] Remaining Audit Fixes from [`BUGS.md`](BUGS.md) (Part 3 of Phase 7): fixed H1-H3, H5, M1-M6, L1-L4 + fail-fast CI/CD in `phase7-hardening-and-polish`.
   - [ ] Guided User Manual Testing Protocol: `[ORCHESTRATOR-AGENT]` provides interactive step-by-step test instructions and report template for user feedback.
   - [ ] User Bug Triage & Resolution: Implement targeted fixes for all user-reported UI/UX issues and edge cases.
   - [ ] Final v1.0 Release Verification: End-to-end audit and release build ready for production use.

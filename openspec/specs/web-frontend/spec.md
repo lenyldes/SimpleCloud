@@ -27,6 +27,20 @@ The system SHALL display an interactive visual dropzone overlay when files are d
 - **WHEN** user drops files onto the dropzone overlay
 - **THEN** system uploads the files to /api/v1/files/upload, shows progress notification, and updates the file listing upon completion.
 
+### Requirement: Clean Upload Request Payload
+The frontend upload request SHALL only include fields the API defines (`file`, optional `folder_id`). It MUST NOT send undefined or legacy fields such as a `path` form field.
+
+#### Scenario: Upload multipart form contents
+- **WHEN** the user uploads a file from the current folder view
+- **THEN** the multipart request body SHALL contain the file part and, when a folder is open, `folder_id` only — no `path` field with an undefined value.
+
+### Requirement: Repeated Upload of the Same File
+The frontend SHALL reset the file selection input after dispatching an upload so that selecting the identical file again fires a change event and re-uploads it.
+
+#### Scenario: Uploading the same file twice in a row
+- **WHEN** the user selects file A, the upload starts, and the user selects file A again from the file picker
+- **THEN** the second selection SHALL trigger a new upload of file A.
+
 ### Requirement: File Action Operations and Modals
 The system SHALL provide file previews (image lightbox, text/code viewer, video player), direct download links, file deletion, and new folder creation.
 
@@ -61,9 +75,13 @@ The web frontend SHALL render folder items alongside files in grid and list view
 - **THEN** system SHALL set state `currentFolderId` to the ancestor folder ID and re-render the workspace.
 
 ### Requirement: Quota Progress Indicator in UI Sidebar
-The web frontend SHALL fetch current user quota usage (`used_bytes` and `quota_bytes`) and render a responsive progress bar in the sidebar with dynamic color thresholds (blue <= 70%, orange > 70%, red > 85%).
+The web frontend SHALL render a responsive progress bar in the sidebar with dynamic color thresholds (blue <= 70%, orange > 70%, red > 85%), deriving `used_bytes` and `quota_bytes` from the authenticated user profile response (`/api/v1/auth/me`) instead of summing file sizes from the currently listed files.
+
+#### Scenario: Quota display reflects total usage
+- **WHEN** the user has files stored in nested folders and opens the root view
+- **THEN** the sidebar indicator SHALL show usage equal to the server-reported `used_bytes` (all folders included), not just the sum of root-level files.
 
 #### Scenario: Updating quota display after upload
 - **WHEN** file upload completes successfully
-- **THEN** system SHALL re-calculate used storage bytes, update the percentage text, and adjust sidebar progress bar width and status color.
+- **THEN** system SHALL refresh the used/quota values from the server, update the percentage text, and adjust sidebar progress bar width and status color.
 

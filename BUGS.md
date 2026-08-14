@@ -17,23 +17,23 @@
 | ✅ C3 (phase7-critical-quick-fixes, 2026-08-14) | CRITICAL | `/api/v1/auth/me` зарегистрирован без middleware аутентификации — всегда 401 | `cmd/main.go:86` |
 | ✅ C4 (phase7-db-quotas-deletion, 2026-08-14) | CRITICAL | Совокупная квота пользователя не контролируется, `used_bytes` не обновляется — исчерпание диска (DoS) | `internal/handler/file.go`, `internal/database/migrations/000001_init_schema.sql` |
 | ✅ C5 (phase7-critical-quick-fixes, 2026-08-14) | CRITICAL | Порты `8080` (storage) и `5432` (PostgreSQL) опубликованы наружу — обход rate-limit и прямой доступ к БД | `docker-compose.yml:9-10,25-26` |
-| H1 | HIGH | Нет таймаутов HTTP-сервера и лимитов тела запроса (Slowloris, DoS) | `cmd/main.go:104`, `internal/handler/file.go:78` |
-| H2 | HIGH | ID файла не валидируется как UUID — риск path traversal при ошибках в `GetShardedPath` | `internal/storage/sharding.go:22-29`, `internal/handler/file.go:156-157` |
-| H3 | HIGH | Cookie без флага `Secure`, нет явной CSRF-защиты для cookie-сессий | `internal/auth/handler.go:52-59` |
+| ✅ H1 (phase7-hardening-and-polish, 2026-08-14) | HIGH | Нет таймаутов HTTP-сервера и лимитов тела запроса (Slowloris, DoS) | `cmd/main.go:104`, `internal/handler/file.go:78` |
+| ✅ H2 (phase7-hardening-and-polish, 2026-08-14) | HIGH | ID файла не валидируется как UUID — риск path traversal при ошибках в `GetShardedPath` | `internal/storage/sharding.go:22-29`, `internal/handler/file.go:156-157` |
+| ✅ H3 (phase7-hardening-and-polish, 2026-08-14) | HIGH | Cookie без флага `Secure`, нет явной CSRF-защиты для cookie-сессий | `internal/auth/handler.go:52-59` |
 | ✅ H4 (phase7-db-quotas-deletion, 2026-08-14) | HIGH | Удаление папки не удаляет файлы; эндпоинта удаления файлов нет вообще — бесконечный рост диска и «осиротевшие» файлы | `internal/handler/folder.go:183-231`, `cmd/main.go` |
-| H5 | HIGH | Контейнеры работают от root, файлы на хост-томе создаются root-ом | `services/storage-service/Dockerfile`, `services/web-frontend/Dockerfile` |
-| M1 | MEDIUM | Строка подключения к БД собирается конкатенацией — ломается на спецсимволах в пароле; `sslmode=disable` | `cmd/main.go:49` |
-| M2 | MEDIUM | Нет graceful shutdown — незавершённые загрузки обрываются при деплое/рестарте | `cmd/main.go:104` |
-| M3 | MEDIUM | Миграции без журнала версий, выполняются целиком при каждом старте | `internal/database/database.go:45-68` |
-| M4 | MEDIUM | Timing-перечисление пользователей при логине | `internal/auth/service.go:120-134` |
-| M5 | MEDIUM | CSP разрешает `'unsafe-inline'` для скриптов | `services/web-frontend/nginx.conf:17` |
-| M6 | MEDIUM | Срок жизни cookie захардкожен (24ч) и не связан с `sessionDuration` | `internal/auth/handler.go:58` |
+| ✅ H5 (phase7-hardening-and-polish, 2026-08-14) | HIGH | Контейнеры работают от root, файлы на хост-томе создаются root-ом | `services/storage-service/Dockerfile`, `services/web-frontend/Dockerfile` |
+| ✅ M1 (phase7-hardening-and-polish, 2026-08-14) | MEDIUM | Строка подключения к БД собирается конкатенацией — ломается на спецсимволах в пароле; `sslmode=disable` | `cmd/main.go:49` |
+| ✅ M2 (phase7-hardening-and-polish, 2026-08-14) | MEDIUM | Нет graceful shutdown — незавершённые загрузки обрываются при деплое/рестарте | `cmd/main.go:104` |
+| ✅ M3 (phase7-hardening-and-polish, 2026-08-14) | MEDIUM | Миграции без журнала версий, выполняются целиком при каждом старте | `internal/database/database.go:45-68` |
+| ✅ M4 (phase7-hardening-and-polish, 2026-08-14) | MEDIUM | Timing-перечисление пользователей при логине | `internal/auth/service.go:120-134` |
+| ✅ M5 (phase7-hardening-and-polish, 2026-08-14) | MEDIUM | CSP разрешает `'unsafe-inline'` для скриптов | `services/web-frontend/nginx.conf:17` |
+| ✅ M6 (phase7-hardening-and-polish, 2026-08-14) | MEDIUM | Срок жизни cookie захардкожен (24ч) и не связан с `sessionDuration` | `internal/auth/handler.go:58` |
 | ✅ M7 (phase7-db-quotas-deletion, 2026-08-14) | MEDIUM | Ошибка парсинга UUID родителя молча игнорируется — рассинхрон память/БД | `internal/handler/folder.go:106-113` |
 | ✅ M8 (phase7-db-quotas-deletion, 2026-08-14) | MEDIUM | Предпроверка размера загрузки сравнивает файл со всей квотой, а не с остатком | `internal/handler/file.go:66-75` |
-| L1 | LOW | Фронтенд шлёт несуществующее поле `state.currentPath` («undefined») | `services/web-frontend/src/app.js:200-204` |
-| L2 | LOW | Повторная загрузка того же файла не работает (не сбрасывается `input.value`) | `services/web-frontend/src/app.js:626-632` |
-| L3 | LOW | Индикатор квоты считает только файлы корня | `services/web-frontend/src/app.js:259-280` |
-| L4 | LOW | `Dockerfile` не копирует `go.sum` до `go mod download` | `services/storage-service/Dockerfile:6` |
+| ✅ L1 (phase7-hardening-and-polish, 2026-08-14) | LOW | Фронтенд шлёт несуществующее поле `state.currentPath` («undefined») | `services/web-frontend/src/app.js:200-204` |
+| ✅ L2 (phase7-hardening-and-polish, 2026-08-14) | LOW | Повторная загрузка того же файла не работает (не сбрасывается `input.value`) | `services/web-frontend/src/app.js:626-632` |
+| ✅ L3 (phase7-hardening-and-polish, 2026-08-14) | LOW | Индикатор квоты считает только файлы корня | `services/web-frontend/src/app.js:259-280` |
+| ✅ L4 (phase7-hardening-and-polish, 2026-08-14) | LOW | `Dockerfile` не копирует `go.sum` до `go mod download` | `services/storage-service/Dockerfile:6` |
 | L5 | LOW | `Content-Disposition` без `filename*` (RFC 5987) для UTF-8 имён | `internal/handler/file.go:206` |
 
 ---
@@ -195,7 +195,7 @@ http.Handle("/api/v1/auth/me", requireAuth(http.HandlerFunc(authHandler.MeHandle
 
 ## HIGH
 
-### H1. Нет таймаутов HTTP-сервера и лимита тела запроса
+### ✅ H1 (phase7-hardening-and-polish, 2026-08-14). Нет таймаутов HTTP-сервера и лимита тела запроса
 
 **Где:** `cmd/main.go:104` (`http.ListenAndServe`), `internal/handler/file.go:78`, `internal/auth/handler.go:34` (`json.NewDecoder(r.Body)` без лимита).
 
@@ -225,7 +225,7 @@ http.Handle("/api/v1/auth/me", requireAuth(http.HandlerFunc(authHandler.MeHandle
 
 ---
 
-### H2. ID файла/папки из URL не валидируется как UUID
+### ✅ H2 (phase7-hardening-and-polish, 2026-08-14). ID файла/папки из URL не валидируется как UUID
 
 **Где:** `internal/handler/file.go:156-163`, `internal/storage/sharding.go:22-29`.
 
@@ -248,7 +248,7 @@ if strings.ContainsAny(fileID, "/\\") || filepath.Base(fileID) != fileID {
 
 ---
 
-### H3. Cookie без `Secure`; CSRF-защита только через SameSite=Lax
+### ✅ H3 (phase7-hardening-and-polish, 2026-08-14). Cookie без `Secure`; CSRF-защита только через SameSite=Lax
 
 **Где:** `internal/auth/handler.go:52-59` и `:86-93`.
 
@@ -295,7 +295,7 @@ if strings.ContainsAny(fileID, "/\\") || filepath.Base(fileID) != fileID {
 
 ---
 
-### H5. Контейнеры работают от root
+### ✅ H5 (phase7-hardening-and-polish, 2026-08-14). Контейнеры работают от root
 
 **Где:** `services/storage-service/Dockerfile` (нет `USER`), `services/web-frontend/Dockerfile` (nginx по умолчанию мастер от root).
 
@@ -315,7 +315,7 @@ if strings.ContainsAny(fileID, "/\\") || filepath.Base(fileID) != fileID {
 
 ## MEDIUM
 
-### M1. Строка подключения к БД собирается конкатенацией
+### ✅ M1 (phase7-hardening-and-polish, 2026-08-14). Строка подключения к БД собирается конкатенацией
 
 **Где:** `cmd/main.go:49`.
 
@@ -337,7 +337,7 @@ connURL.RawQuery = q.Encode()
 connStr := connURL.String()
 ```
 
-### M2. Нет graceful shutdown
+### ✅ M2 (phase7-hardening-and-polish, 2026-08-14). Нет graceful shutdown
 
 **Где:** `cmd/main.go:104`.
 
@@ -355,7 +355,7 @@ defer cancel()
 _ = srv.Shutdown(shutdownCtx)
 ```
 
-### M3. Миграции без журнала версий
+### ✅ M3 (phase7-hardening-and-polish, 2026-08-14). Миграции без журнала версий
 
 **Где:** `internal/database/database.go:45-68`.
 
@@ -363,7 +363,7 @@ _ = srv.Shutdown(shutdownCtx)
 
 **Как исправить:** минимально — заведите таблицу `schema_migrations(version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ)` и в транзакции проверяйте/вставляйте версию перед исполнением каждого файла. Файл миграции исполнять внутри `BEGIN/COMMIT`.
 
-### M4. Timing-перечисление пользователей
+### ✅ M4 (phase7-hardening-and-polish, 2026-08-14). Timing-перечисление пользователей
 
 **Где:** `internal/auth/service.go:120-134`.
 
@@ -378,7 +378,7 @@ if err != nil { // user not found
 }
 ```
 
-### M5. CSP с `'unsafe-inline'` для скриптов
+### ✅ M5 (phase7-hardening-and-polish, 2026-08-14). CSP с `'unsafe-inline'` для скриптов
 
 **Где:** `services/web-frontend/nginx.conf:17`.
 
@@ -386,7 +386,7 @@ if err != nil { // user not found
 
 **Как исправить:** уберите `'unsafe-inline'` из `script-src`. Если в `index.html` есть инлайн-обработчики (`onclick=...`) — вынесите их в `app.js`. Проверьте консоль браузера на сообщения о заблокированных скриптах после изменения.
 
-### M6. Срок cookie не связан с длительностью сессии
+### ✅ M6 (phase7-hardening-and-polish, 2026-08-14). Срок cookie не связан с длительностью сессии
 
 **Где:** `internal/auth/handler.go:58`.
 
@@ -410,25 +410,25 @@ if err != nil { // user not found
 
 ## LOW / UX
 
-### L1. Фронтенд отправляет несуществующее поле
+### ✅ L1 (phase7-hardening-and-polish, 2026-08-14). Фронтенд отправляет несуществующее поле
 
 **Где:** `services/web-frontend/src/app.js:200-204`.
 
 `formData.append('path', state.currentPath)` — `state.currentPath` не определён никогда; в запрос уходит строка `"undefined"`. Сервер её игнорирует, но это мусор и потенциальная путаница. **Исправление:** удалить ветку `else` целиком (папка передаётся через `folder_id`).
 
-### L2. Невозможно загрузить тот же файл дважды подряд
+### ✅ L2 (phase7-hardening-and-polish, 2026-08-14). Невозможно загрузить тот же файл дважды подряд
 
 **Где:** `services/web-frontend/src/app.js:626-632`.
 
 Событие `change` у `<input type=file>` не срабатывает, если значение не изменилось. **Исправление:** после запуска `handleFileUpload(...)` сделать `fileUploadInput.value = ''`.
 
-### L3. Индикатор квоты занижен
+### ✅ L3 (phase7-hardening-and-polish, 2026-08-14). Индикатор квоты занижен
 
 **Где:** `services/web-frontend/src/app.js:259-280`.
 
 `loadFiles()` запрашивает только файлы корня (без `folder_id`), поэтому `state.quota.used` не учитывает файлы в папках. **Исправление:** после реализации серверной квоты (C4) отдавайте `used_bytes/quota_bytes` в ответе `/api/v1/auth/me` и рисуйте индикатор из него, а не суммируйте список на клиенте.
 
-### L4. Dockerfile не копирует go.sum
+### ✅ L4 (phase7-hardening-and-polish, 2026-08-14). Dockerfile не копирует go.sum
 
 **Где:** `services/storage-service/Dockerfile:6`.
 

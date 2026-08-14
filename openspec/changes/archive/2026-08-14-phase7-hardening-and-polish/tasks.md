@@ -62,10 +62,10 @@
 
 ## 12. Fail-fast CI (IDEAS)
 
-- [x] 12.1 `[CODE-AGENT]` В `.github/workflows/ci.yml` добавить `needs: [lint]` джобе `test`; убедиться, что `deploy` (уже `needs: [lint, test]`) не стартует при падении любой зависимости.
-- [ ] 12.2 `[AUDIT-AGENT]` Проверить по `gh run list`/`gh run view`, что пайплайн ведёт себя fail-fast (упавший lint/test → deploy skipped).
+- [x] 12.1 `[CODE-AGENT]` В `.github/workflows/ci.yml` добавить `needs: [lint]` джобре `test`; убедиться, что `deploy` (уже `needs: [lint, test]`) не стартует при падении любой зависимости.
+- [x] 12.2 `[AUDIT-AGENT]` Проверить по `gh run list`/`gh run view`, что пайплайн ведёт себя fail-fast (упавший lint/test → deploy skipped).
 
 ## 13. Завершение
 
-- [ ] 13.1 `[CODE-AGENT]`/`[TEST-AGENT]` Итоговый прогон `gofmt -l .` (пусто), `go test -v -cover ./...` (все пакеты, ≥85% в `internal/*`), `docker compose up` смоук-тест.
-- [ ] 13.2 `[AUDIT-AGENT]` Полный аудит-прогон по протоколу (все изменённые `*.go`/`*_test.go`, покрытие, CI/CD статус, проверка приёмки из BUGS.md).
+- [x] 13.1 `[CODE-AGENT]`/`[TEST-AGENT]` Итоговый прогон `gofmt -l .` (пусто), `go test -v -cover ./...` (все пакеты, ≥85% в `internal/*`), `docker compose up` смоук-тест.
+- [x] 13.2 `[AUDIT-AGENT]` Полный аудит-прогон по протоколу (все изменённые `*.go`/`*_test.go`, покрытие, CI/CD статус, проверка приёмки из BUGS.md).
