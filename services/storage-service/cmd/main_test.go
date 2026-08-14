@@ -199,3 +199,50 @@ func TestServiceRefusesToStartWithUnreachableDatabase(t *testing.T) {
 	}
 	runServerExpectFatal(t, bin, env, 15*time.Second)
 }
+
+// Task 1.1 RED-test: NewServer configures ReadHeaderTimeout, ReadTimeout, WriteTimeout, IdleTimeout
+func TestServerTimeouts(t *testing.T) {
+	srv := NewServer(":8080", nil)
+	if srv == nil {
+		t.Fatal("expected non-nil http.Server from NewServer")
+	}
+	if srv.ReadHeaderTimeout != 10*time.Second {
+		t.Errorf("expected ReadHeaderTimeout 10s, got %v", srv.ReadHeaderTimeout)
+	}
+	if srv.ReadTimeout != 30*time.Second {
+		t.Errorf("expected ReadTimeout 30s, got %v", srv.ReadTimeout)
+	}
+	if srv.WriteTimeout != 5*time.Minute {
+		t.Errorf("expected WriteTimeout 5m, got %v", srv.WriteTimeout)
+	}
+	if srv.IdleTimeout != 60*time.Second {
+		t.Errorf("expected IdleTimeout 60s, got %v", srv.IdleTimeout)
+	}
+}
+
+// Task 2.1 RED-test: RunServer gracefully shuts down server on context cancellation within timeout
+func TestServerGracefulShutdown(t *testing.T) {
+	port := freePort(t)
+	srv := NewServer(":"+port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunServer(ctx, srv)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Errorf("expected clean graceful shutdown (nil error), got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server failed to shutdown gracefully within 5 seconds")
+	}
+}
+

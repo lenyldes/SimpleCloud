@@ -42,6 +42,27 @@ func TestGetShardedPath(t *testing.T) {
 			expected: "",
 			wantErr:  true,
 		},
+		{
+			name:     "Path traversal dotdot in file ID returns error",
+			baseDir:  "/storage",
+			fileID:   "../etc/passwd",
+			expected: "",
+			wantErr:  true,
+		},
+		{
+			name:     "Slash in file ID returns error",
+			baseDir:  "/storage",
+			fileID:   "sub/dir",
+			expected: "",
+			wantErr:  true,
+		},
+		{
+			name:     "Backslash in file ID returns error",
+			baseDir:  "/storage",
+			fileID:   "foo\\bar",
+			expected: "",
+			wantErr:  true,
+		},
 	}
 
 	for _, tt := range tests {

@@ -578,10 +578,10 @@ func TestFileDelete_ForeignAndInvalidIDs(t *testing.T) {
 		}
 	})
 
-	t.Run("deleting with non-UUID id returns 404", func(t *testing.T) {
+	t.Run("deleting with non-UUID id returns 400 Bad Request", func(t *testing.T) {
 		delRR := deleteFileRequest(fh, userA, "not-a-uuid")
-		if delRR.Code != http.StatusNotFound {
-			t.Errorf("expected 404, got %d", delRR.Code)
+		if delRR.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for non-UUID file ID, got %d", delRR.Code)
 		}
 	})
 }
@@ -808,6 +808,14 @@ func TestFileHandler_DownloadHandler_BranchCoverage(t *testing.T) {
 		rr := downloadFileRequest(fh, userID, "")
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("expected 400 for empty file ID, got %d", rr.Code)
+		}
+	})
+
+	t.Run("DownloadHandler non-UUID file ID returns 400 Bad Request", func(t *testing.T) {
+		fh := handler.NewFileHandler(engine, nil, 10*1024*1024)
+		rr := downloadFileRequest(fh, userID, "not-a-valid-uuid")
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for non-UUID file ID, got %d", rr.Code)
 		}
 	})
 

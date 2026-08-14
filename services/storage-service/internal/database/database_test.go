@@ -144,3 +144,70 @@ func TestInitDB_SuccessAndMigrations(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildDSN(t *testing.T) {
+	t.Run("Escapes special characters in password and sets connection params", func(t *testing.T) {
+		user := "cloud_user"
+		pass := "p@ss:w/ord%123"
+		host := "localhost"
+		port := "5432"
+		dbname := "simplecloud"
+		sslmode := "disable"
+
+		dsn := database.BuildDSN(user, pass, host, port, dbname, sslmode)
+		expected := "postgres://cloud_user:p%40ss%3Aw%2Ford%25123@localhost:5432/simplecloud?sslmode=disable"
+		if dsn != expected {
+			t.Errorf("expected DSN %q, got %q", expected, dsn)
+		}
+	})
+
+	t.Run("Standard credentials without special characters", func(t *testing.T) {
+		dsn := database.BuildDSN("user", "pass", "127.0.0.1", "5432", "mydb", "disable")
+		expected := "postgres://user:pass@127.0.0.1:5432/mydb?sslmode=disable"
+		if dsn != expected {
+			t.Errorf("expected DSN %q, got %q", expected, dsn)
+		}
+	})
+}
+
+func TestSchemaMigrationsTable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	connStr := "postgres://simplecloud_user:simplecloud_dev_password@127.0.0.1:5432/simplecloud?sslmode=disable"
+	pool, err := database.InitDB(ctx, connStr)
+	if err != nil {
+		t.Skipf("Skipping migration tracking integration test; postgres database not accessible: %v", err)
+	}
+	defer pool.Close()
+
+	var tableExists bool
+	err = pool.QueryRow(ctx, "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'schema_migrations');").Scan(&tableExists)
+	if err != nil || !tableExists {
+		t.Fatalf("expected 'schema_migrations' table to exist after RunMigrations, err: %v", err)
+	}
+
+	var count int
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM schema_migrations;").Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to count rows in schema_migrations: %v", err)
+	}
+	if count == 0 {
+		t.Errorf("expected at least 1 migration recorded in schema_migrations table, got 0")
+	}
+
+	err = database.RunMigrations(ctx, pool)
+	if err != nil {
+		t.Fatalf("re-running RunMigrations failed: %v", err)
+	}
+
+	var countAfter int
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM schema_migrations;").Scan(&countAfter)
+	if err != nil {
+		t.Fatalf("failed to count rows in schema_migrations after rerun: %v", err)
+	}
+	if countAfter != count {
+		t.Errorf("expected count of schema_migrations to stay at %d on rerun, got %d", count, countAfter)
+	}
+}
+

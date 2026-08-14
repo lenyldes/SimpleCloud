@@ -492,11 +492,25 @@ func TestFolderHandler_BranchCoverage(t *testing.T) {
 		}
 	})
 
-	t.Run("DeleteHandler non-UUID folder ID returns 404", func(t *testing.T) {
+	t.Run("DeleteHandler non-UUID folder ID returns 400 Bad Request", func(t *testing.T) {
 		fh := handler.NewFolderHandler(nil, engine)
 		rr := deleteFolderRequest(fh, userID, "not-a-uuid")
-		if rr.Code != http.StatusNotFound {
-			t.Errorf("expected 404 for non-UUID folder ID, got %d", rr.Code)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for non-UUID folder ID, got %d", rr.Code)
+		}
+	})
+
+	t.Run("CreateHandler payload larger than 1MB returns 400 or 413", func(t *testing.T) {
+		fh := handler.NewFolderHandler(nil, engine)
+		hugeName := strings.Repeat("A", 1024*1024+100)
+		jsonBody, _ := json.Marshal(map[string]interface{}{"name": hugeName})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		req = req.WithContext(auth.WithUserID(req.Context(), userID))
+		rr := httptest.NewRecorder()
+		fh.CreateHandler(rr, req)
+		if rr.Code != http.StatusBadRequest && rr.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("expected 400 or 413 for payload > 1MB, got %d", rr.Code)
 		}
 	})
 

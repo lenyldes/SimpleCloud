@@ -227,3 +227,30 @@ func TestDBAuthService_StartCleanupWorker(t *testing.T) {
 	time.Sleep(35 * time.Millisecond)
 	workerCancel()
 }
+
+func TestTimingSafeLogin(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	connStr := "postgres://simplecloud_user:simplecloud_dev_password@127.0.0.1:5432/simplecloud?sslmode=disable"
+	pool, err := database.InitDB(ctx, connStr)
+	if err != nil {
+		t.Skipf("Skipping integration test; postgres database not accessible: %v", err)
+	}
+	defer pool.Close()
+
+	dbAuth := auth.NewDBAuthService(pool, 1*time.Hour)
+
+	start := time.Now()
+	_, _, err = dbAuth.Login(ctx, "nonexistent-timing-test@simplecloud.local", "TestPassword123!", "GoTest", "127.0.0.1")
+	elapsed := time.Since(start)
+
+	if err != auth.ErrInvalidCredentials {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+
+	if elapsed < 2*time.Millisecond {
+		t.Errorf("expected timing-safe login with non-existent email to execute bcrypt check (elapsed >= 2ms), took %v", elapsed)
+	}
+}
+
