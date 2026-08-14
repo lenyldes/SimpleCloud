@@ -273,7 +273,7 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to start transaction"})
 		return
 	}
-	defer tx.Rollback(r.Context())
+	defer func() { _ = tx.Rollback(r.Context()) }()
 
 	// Step 1: collect file paths, file IDs, and sizes in the subtree
 	queryCollectFiles := `

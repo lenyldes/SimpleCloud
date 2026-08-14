@@ -78,7 +78,7 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to start transaction"})
 		return
 	}
-	defer tx.Rollback(r.Context())
+	defer func() { _ = tx.Rollback(r.Context()) }()
 
 	var usedBytes, quotaBytes int64
 	err = tx.QueryRow(r.Context(),
@@ -437,7 +437,7 @@ func (fh *FileHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to start transaction"})
 		return
 	}
-	defer tx.Rollback(r.Context())
+	defer func() { _ = tx.Rollback(r.Context()) }()
 
 	_, err = tx.Exec(r.Context(), `DELETE FROM files WHERE id = $1 AND user_id = $2`, parsedFileID, userID)
 	if err != nil {
