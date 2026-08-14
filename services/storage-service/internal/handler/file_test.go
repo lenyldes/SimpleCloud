@@ -378,7 +378,7 @@ func TestUpload_IncrementsUsedBytes(t *testing.T) {
 	}
 	after := getUserUsedBytes(t, pool, userID)
 	if after != before+int64(len(content)) {
-		t.Errorf("expected used_bytes to grow from %d to %d, got %d", before, before+len(content), after)
+		t.Errorf("expected used_bytes to grow from %d to %d, got %d", before, before+int64(len(content)), after)
 	}
 }
 
@@ -638,9 +638,6 @@ func TestFilesRouting_NoConflict(t *testing.T) {
 		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}))
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-
 	content := []byte("routing test payload")
 	rr := uploadTestFile(t, fh, userID, "routing.txt", content, "")
 	if rr.Code != http.StatusCreated {
@@ -649,16 +646,11 @@ func TestFilesRouting_NoConflict(t *testing.T) {
 	meta := decodeFileMeta(t, rr)
 
 	doRequest := func(method, path string, fileID string) *http.Response {
-		req, err := http.NewRequest(method, srv.URL+path+fileID, nil)
-		if err != nil {
-			t.Fatalf("failed to build request: %v", err)
-		}
+		req := httptest.NewRequest(method, path+fileID, nil)
 		req = req.WithContext(auth.WithUserID(req.Context(), userID))
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("request failed: %v", err)
-		}
-		return resp
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec.Result()
 	}
 
 	// GET download route still served by DownloadHandler, not the dispatcher.
@@ -669,12 +661,11 @@ func TestFilesRouting_NoConflict(t *testing.T) {
 	resp.Body.Close()
 
 	// GET list route unaffected.
-	reqList, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/files", nil)
+	reqList := httptest.NewRequest(http.MethodGet, "/api/v1/files", nil)
 	reqList = reqList.WithContext(auth.WithUserID(reqList.Context(), userID))
-	respList, err := http.DefaultClient.Do(reqList)
-	if err != nil {
-		t.Fatalf("list request failed: %v", err)
-	}
+	recList := httptest.NewRecorder()
+	mux.ServeHTTP(recList, reqList)
+	respList := recList.Result()
 	if respList.StatusCode != http.StatusOK {
 		t.Errorf("expected 200 from list route, got %d", respList.StatusCode)
 	}
