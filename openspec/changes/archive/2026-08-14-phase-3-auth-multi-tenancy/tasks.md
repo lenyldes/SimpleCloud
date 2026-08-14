@@ -20,4 +20,4 @@
 
 ## 5. Verification & Compliance Audit
 
-- [ ] 5.1 `[AUDIT-AGENT]` Audit code quality, test coverage threshold (85%+ statement coverage across `internal/*`), formatting (`gofmt`), security hygiene, and Docker container build.
+- [x] 5.1 `[AUDIT-AGENT]` Audit code quality, test coverage threshold (85%+ statement coverage across `internal/*`), formatting (`gofmt`), security hygiene, and Docker container build.
