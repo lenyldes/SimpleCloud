@@ -6,15 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
@@ -31,20 +33,19 @@ type FileMetadata struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// FileHandler manages HTTP file upload, download, and listing operations.
+// FileHandler manages HTTP file upload, download, listing, and deletion.
 type FileHandler struct {
 	engine       *storage.DiskEngine
+	pool         *pgxpool.Pool
 	defaultQuota int64
-	mu           sync.RWMutex
-	files        map[string]FileMetadata
 }
 
-// NewFileHandler initializes a new FileHandler instance.
-func NewFileHandler(engine *storage.DiskEngine, defaultQuota int64) *FileHandler {
+// NewFileHandler initializes a new FileHandler instance with PostgreSQL pool.
+func NewFileHandler(engine *storage.DiskEngine, pool *pgxpool.Pool, defaultQuota int64) *FileHandler {
 	return &FileHandler{
 		engine:       engine,
+		pool:         pool,
 		defaultQuota: defaultQuota,
-		files:        make(map[string]FileMetadata),
 	}
 }
 
@@ -63,9 +64,42 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if fh.pool == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "database pool unavailable"})
+		return
+	}
+
+	tx, err := fh.pool.Begin(r.Context())
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to start transaction"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var usedBytes, quotaBytes int64
+	err = tx.QueryRow(r.Context(),
+		`SELECT used_bytes, quota_bytes FROM users WHERE id = $1 FOR UPDATE`,
+		userID,
+	).Scan(&usedBytes, &quotaBytes)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "user record not found"})
+		return
+	}
+
+	remainingQuota := quotaBytes - usedBytes
+	if remainingQuota < 0 {
+		remainingQuota = 0
+	}
+
 	if r.Header.Get("Content-Length") != "" {
 		if contentLength, err := strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64); err == nil {
-			if contentLength > fh.defaultQuota {
+			if contentLength > remainingQuota {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusRequestEntityTooLarge)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Storage quota exceeded"})
@@ -75,7 +109,7 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Limit multipart header reading to 32MB
-	err := r.ParseMultipartForm(32 << 20)
+	err = r.ParseMultipartForm(32 << 20)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -85,8 +119,12 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	folderIDVal := r.FormValue("folder_id")
 	var folderIDPtr *string
+	var folderUUID *uuid.UUID
 	if folderIDVal != "" {
 		folderIDPtr = &folderIDVal
+		if parsed, parseErr := uuid.Parse(folderIDVal); parseErr == nil {
+			folderUUID = &parsed
+		}
 	}
 
 	file, header, err := r.FormFile("file")
@@ -106,7 +144,7 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	size, sha256Hex, err := fh.engine.Save(fileID, file, fh.defaultQuota)
+	size, sha256Hex, err := fh.engine.Save(fileID, file, remainingQuota)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		if errors.Is(err, storage.ErrQuotaExceeded) {
@@ -119,6 +157,49 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	storagePath, _ := fh.engine.GetFilePath(fileID)
+
+	var dbFolderID interface{} = nil
+	if folderUUID != nil {
+		dbFolderID = *folderUUID
+	} else if folderIDVal != "" {
+		dbFolderID = folderIDVal
+	}
+
+	createdAt := time.Now()
+	_, err = tx.Exec(r.Context(),
+		`INSERT INTO files (id, user_id, folder_id, filename, size_bytes, sha256_hash, storage_path, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		fileID, userID, dbFolderID, header.Filename, size, sha256Hex, storagePath, createdAt,
+	)
+	if err != nil {
+		_ = os.Remove(storagePath)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to save metadata: %v", err)})
+		return
+	}
+
+	_, err = tx.Exec(r.Context(),
+		`UPDATE users SET used_bytes = used_bytes + $1 WHERE id = $2`,
+		size, userID,
+	)
+	if err != nil {
+		_ = os.Remove(storagePath)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to update user quota: %v", err)})
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		_ = os.Remove(storagePath)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to commit metadata: %v", err)})
+		return
+	}
+
 	meta := FileMetadata{
 		ID:        fileID,
 		UserID:    userID.String(),
@@ -126,12 +207,8 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		Filename:  header.Filename,
 		Size:      size,
 		SHA256:    sha256Hex,
-		CreatedAt: time.Now(),
+		CreatedAt: createdAt,
 	}
-
-	fh.mu.Lock()
-	fh.files[fileID] = meta
-	fh.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -162,26 +239,32 @@ func (fh *FileHandler) DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fh.mu.RLock()
-	meta, exists := fh.files[fileID]
-	fh.mu.RUnlock()
-
-	if exists && meta.UserID != "" && meta.UserID != userID.String() {
+	if fh.pool == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
 		return
 	}
 
-	filePath, err := fh.engine.GetFilePath(fileID)
+	var ownerID uuid.UUID
+	var filename, storagePath string
+	err := fh.pool.QueryRow(r.Context(),
+		`SELECT user_id, filename, storage_path FROM files WHERE id = $1`,
+		fileID,
+	).Scan(&ownerID, &filename, &storagePath)
+	if err != nil || ownerID != userID {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+		return
+	}
+
+	f, err := os.Open(storagePath)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
-		return
+		if diskPath, err2 := fh.engine.GetFilePath(fileID); err2 == nil {
+			f, err = os.Open(diskPath)
+		}
 	}
-
-	f, err := os.Open(filePath)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -196,11 +279,6 @@ func (fh *FileHandler) DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to stat file"})
 		return
-	}
-
-	filename := fileID
-	if exists && meta.Filename != "" {
-		filename = meta.Filename
 	}
 
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(filename)))
@@ -226,36 +304,171 @@ func (fh *FileHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	list := make([]FileMetadata, 0)
+	if fh.pool == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(list)
+		return
+	}
+
 	hasFolderID := r.URL.Query().Has("folder_id")
 	targetFolderID := r.URL.Query().Get("folder_id")
 
-	fh.mu.RLock()
-	list := make([]FileMetadata, 0)
-	for _, meta := range fh.files {
-		if meta.UserID != "" && meta.UserID != userID.String() {
+	var rows pgx.Rows
+	var err error
+
+	if !hasFolderID || targetFolderID == "" {
+		rows, err = fh.pool.Query(r.Context(),
+			`SELECT id, user_id, folder_id, filename, size_bytes, sha256_hash, created_at
+			 FROM files WHERE user_id = $1 AND folder_id IS NULL ORDER BY created_at DESC`,
+			userID,
+		)
+	} else {
+		parsedFolderID, parseErr := uuid.Parse(targetFolderID)
+		if parseErr != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(list)
+			return
+		}
+		rows, err = fh.pool.Query(r.Context(),
+			`SELECT id, user_id, folder_id, filename, size_bytes, sha256_hash, created_at
+			 FROM files WHERE user_id = $1 AND folder_id = $2 ORDER BY created_at DESC`,
+			userID, parsedFolderID,
+		)
+	}
+
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to query files"})
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, dbUserID string
+		var folderID *uuid.UUID
+		var filename, sha256Hash string
+		var size int64
+		var createdAt time.Time
+
+		if err := rows.Scan(&id, &dbUserID, &folderID, &filename, &size, &sha256Hash, &createdAt); err != nil {
 			continue
 		}
-		if hasFolderID {
-			if targetFolderID == "" {
-				if meta.FolderID == nil || *meta.FolderID == "" {
-					list = append(list, meta)
-				}
-			} else {
-				if meta.FolderID != nil && *meta.FolderID == targetFolderID {
-					list = append(list, meta)
-				}
-			}
-		} else {
-			if meta.FolderID == nil || *meta.FolderID == "" {
-				list = append(list, meta)
-			}
+		var folderIDStr *string
+		if folderID != nil {
+			s := folderID.String()
+			folderIDStr = &s
 		}
+		list = append(list, FileMetadata{
+			ID:        id,
+			UserID:    dbUserID,
+			FolderID:  folderIDStr,
+			Filename:  filename,
+			Size:      size,
+			SHA256:    sha256Hash,
+			CreatedAt: createdAt,
+		})
 	}
-	fh.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(list)
+}
+
+// DeleteHandler handles DELETE /api/v1/files/:id
+func (fh *FileHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok || userID == uuid.Nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	fileID := strings.TrimPrefix(r.URL.Path, "/api/v1/files/")
+	fileID = strings.Trim(fileID, "/")
+	if fileID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "missing file ID"})
+		return
+	}
+
+	parsedFileID, err := uuid.Parse(fileID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+		return
+	}
+
+	if fh.pool == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+		return
+	}
+
+	var size int64
+	var storagePath string
+	err = fh.pool.QueryRow(r.Context(),
+		`SELECT size_bytes, storage_path FROM files WHERE id = $1 AND user_id = $2`,
+		parsedFileID, userID,
+	).Scan(&size, &storagePath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+		return
+	}
+
+	tx, err := fh.pool.Begin(r.Context())
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to start transaction"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	_, err = tx.Exec(r.Context(), `DELETE FROM files WHERE id = $1 AND user_id = $2`, parsedFileID, userID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete file metadata"})
+		return
+	}
+
+	_, err = tx.Exec(r.Context(), `UPDATE users SET used_bytes = GREATEST(used_bytes - $1, 0) WHERE id = $2`, size, userID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to update user quota"})
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to commit file deletion"})
+		return
+	}
+
+	if err := os.Remove(storagePath); err != nil {
+		log.Printf("Warning: failed to remove deleted file binary from disk: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 }
 
 func generateUUID() (string, error) {

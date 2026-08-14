@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
@@ -73,8 +74,8 @@ func main() {
 
 	authHandler := auth.NewAuthHandler(authSvc)
 	engine := storage.NewDiskEngine(storageDir)
-	fileHandler := handler.NewFileHandler(engine, quotaBytes)
-	folderHandler := handler.NewFolderHandler(engine)
+	fileHandler := handler.NewFileHandler(engine, dbPool, quotaBytes)
+	folderHandler := handler.NewFolderHandler(dbPool, engine)
 
 	requireAuth := auth.RequireAuth(authSvc)
 
@@ -86,6 +87,14 @@ func main() {
 	http.Handle("/api/v1/files/upload", requireAuth(http.HandlerFunc(fileHandler.UploadHandler)))
 	http.Handle("/api/v1/files/download/", requireAuth(http.HandlerFunc(fileHandler.DownloadHandler)))
 	http.Handle("/api/v1/files", requireAuth(http.HandlerFunc(fileHandler.ListHandler)))
+	http.Handle("/api/v1/files/", requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		segment := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/files/"), "/")
+		if r.Method == http.MethodDelete && segment != "" && !strings.Contains(segment, "/") {
+			fileHandler.DeleteHandler(w, r)
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})))
 
 	http.Handle("/api/v1/folders", requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {

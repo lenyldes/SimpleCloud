@@ -2,12 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
@@ -25,26 +27,16 @@ type FolderMetadata struct {
 
 // FolderHandler handles HTTP endpoints for directory management.
 type FolderHandler struct {
-	pool    *pgxpool.Pool
-	engine  *storage.DiskEngine
-	mu      sync.RWMutex
-	folders map[string]FolderMetadata
+	pool   *pgxpool.Pool
+	engine *storage.DiskEngine
 }
 
-// NewFolderHandler initializes a FolderHandler instance.
-func NewFolderHandler(args ...interface{}) *FolderHandler {
-	fh := &FolderHandler{
-		folders: make(map[string]FolderMetadata),
+// NewFolderHandler initializes a typed FolderHandler instance.
+func NewFolderHandler(pool *pgxpool.Pool, engine *storage.DiskEngine) *FolderHandler {
+	return &FolderHandler{
+		pool:   pool,
+		engine: engine,
 	}
-	for _, arg := range args {
-		switch v := arg.(type) {
-		case *pgxpool.Pool:
-			fh.pool = v
-		case *storage.DiskEngine:
-			fh.engine = v
-		}
-	}
-	return fh
 }
 
 // CreateHandler handles POST /api/v1/folders
@@ -81,39 +73,43 @@ func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fh.mu.Lock()
-	defer fh.mu.Unlock()
-
+	var parentUUID *uuid.UUID
 	if req.ParentID != nil && *req.ParentID != "" {
-		parent, exists := fh.folders[*req.ParentID]
-		if !exists || parent.UserID != userID.String() {
+		parsed, err := uuid.Parse(*req.ParentID)
+		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "parent folder not found"})
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid parent_id"})
 			return
+		}
+		parentUUID = &parsed
+
+		if fh.pool != nil {
+			var dummy int
+			err := fh.pool.QueryRow(r.Context(),
+				`SELECT 1 FROM folders WHERE id = $1 AND user_id = $2`,
+				parsed, userID,
+			).Scan(&dummy)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "parent folder not found"})
+				return
+			}
 		}
 	}
 
 	folderID := uuid.New().String()
-	meta := FolderMetadata{
-		ID:        folderID,
-		UserID:    userID.String(),
-		ParentID:  req.ParentID,
-		Name:      trimmedName,
-		CreatedAt: time.Now().Format(time.RFC3339),
-	}
+	createdAtStr := time.Now().Format(time.RFC3339)
 
 	if fh.pool != nil {
-		var parentUUID *uuid.UUID
-		if req.ParentID != nil && *req.ParentID != "" {
-			parsed, err := uuid.Parse(*req.ParentID)
-			if err == nil {
-				parentUUID = &parsed
-			}
+		var dbParentID interface{} = nil
+		if parentUUID != nil {
+			dbParentID = *parentUUID
 		}
 		_, err := fh.pool.Exec(r.Context(),
-			`INSERT INTO folders (id, user_id, parent_id, name) VALUES ($1, $2, $3, $4)`,
-			folderID, userID, parentUUID, trimmedName,
+			`INSERT INTO folders (id, user_id, parent_id, name, created_at) VALUES ($1, $2, $3, $4, NOW())`,
+			folderID, userID, dbParentID, trimmedName,
 		)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -123,7 +119,13 @@ func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	fh.folders[folderID] = meta
+	meta := FolderMetadata{
+		ID:        folderID,
+		UserID:    userID.String(),
+		ParentID:  req.ParentID,
+		Name:      trimmedName,
+		CreatedAt: createdAtStr,
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -145,33 +147,67 @@ func (fh *FolderHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	result := make([]FolderMetadata, 0)
+	if fh.pool == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+
 	hasParentID := r.URL.Query().Has("parent_id")
 	targetParentID := r.URL.Query().Get("parent_id")
 
-	fh.mu.RLock()
-	defer fh.mu.RUnlock()
+	var rows pgx.Rows
+	var err error
 
-	result := make([]FolderMetadata, 0)
+	if !hasParentID || targetParentID == "" {
+		rows, err = fh.pool.Query(r.Context(),
+			`SELECT id, user_id, parent_id, name, created_at FROM folders WHERE user_id = $1 AND parent_id IS NULL ORDER BY created_at ASC`,
+			userID,
+		)
+	} else {
+		parsedParentID, parseErr := uuid.Parse(targetParentID)
+		if parseErr != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(result)
+			return
+		}
+		rows, err = fh.pool.Query(r.Context(),
+			`SELECT id, user_id, parent_id, name, created_at FROM folders WHERE user_id = $1 AND parent_id = $2 ORDER BY created_at ASC`,
+			userID, parsedParentID,
+		)
+	}
 
-	for _, f := range fh.folders {
-		if f.UserID != userID.String() {
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to query folders"})
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, dbUserID, name string
+		var parentID *uuid.UUID
+		var createdAt time.Time
+
+		if err := rows.Scan(&id, &dbUserID, &parentID, &name, &createdAt); err != nil {
 			continue
 		}
-		if hasParentID {
-			if targetParentID == "" {
-				if f.ParentID == nil || *f.ParentID == "" {
-					result = append(result, f)
-				}
-			} else {
-				if f.ParentID != nil && *f.ParentID == targetParentID {
-					result = append(result, f)
-				}
-			}
-		} else {
-			if f.ParentID == nil || *f.ParentID == "" {
-				result = append(result, f)
-			}
+		var parentIDStr *string
+		if parentID != nil {
+			s := parentID.String()
+			parentIDStr = &s
 		}
+		result = append(result, FolderMetadata{
+			ID:        id,
+			UserID:    dbUserID,
+			ParentID:  parentIDStr,
+			Name:      name,
+			CreatedAt: createdAt.Format(time.RFC3339),
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -203,40 +239,144 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fh.mu.Lock()
-	defer fh.mu.Unlock()
-
-	folder, exists := fh.folders[folderID]
-	if !exists || folder.UserID != userID.String() {
+	parsedFolderID, err := uuid.Parse(folderID)
+	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "folder not found"})
 		return
 	}
 
-	subfolderIDs := fh.collectSubfoldersLocked(folderID)
-	subfolderIDs = append(subfolderIDs, folderID)
-
-	for _, id := range subfolderIDs {
-		delete(fh.folders, id)
+	if fh.pool == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "folder not found"})
+		return
 	}
 
-	if fh.pool != nil {
-		_, _ = fh.pool.Exec(r.Context(), `DELETE FROM folders WHERE id = $1 AND user_id = $2`, folderID, userID)
+	var dummy int
+	err = fh.pool.QueryRow(r.Context(),
+		`SELECT 1 FROM folders WHERE id = $1 AND user_id = $2`,
+		parsedFolderID, userID,
+	).Scan(&dummy)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "folder not found"})
+		return
+	}
+
+	tx, err := fh.pool.Begin(r.Context())
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to start transaction"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	// Step 1: collect file paths, file IDs, and sizes in the subtree
+	queryCollectFiles := `
+	WITH RECURSIVE subfolders AS (
+		SELECT id FROM folders WHERE id = $1 AND user_id = $2
+		UNION ALL
+		SELECT f.id FROM folders f
+		JOIN subfolders sf ON f.parent_id = sf.id
+	)
+	SELECT fi.id, fi.storage_path, fi.size_bytes
+	FROM files fi
+	WHERE fi.folder_id IN (SELECT id FROM subfolders);
+	`
+	fileRows, err := tx.Query(r.Context(), queryCollectFiles, parsedFolderID, userID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to collect folder files"})
+		return
+	}
+
+	type fileToDelete struct {
+		id          string
+		storagePath string
+		size        int64
+	}
+	var filesToDelete []fileToDelete
+	var totalSize int64
+
+	for fileRows.Next() {
+		var f fileToDelete
+		if err := fileRows.Scan(&f.id, &f.storagePath, &f.size); err == nil {
+			filesToDelete = append(filesToDelete, f)
+			totalSize += f.size
+		}
+	}
+	fileRows.Close()
+
+	// Step 2: DELETE files in subfolders tree
+	queryDeleteFiles := `
+	WITH RECURSIVE subfolders AS (
+		SELECT id FROM folders WHERE id = $1 AND user_id = $2
+		UNION ALL
+		SELECT f.id FROM folders f
+		JOIN subfolders sf ON f.parent_id = sf.id
+	)
+	DELETE FROM files WHERE folder_id IN (SELECT id FROM subfolders);
+	`
+	_, err = tx.Exec(r.Context(), queryDeleteFiles, parsedFolderID, userID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete subfolder files"})
+		return
+	}
+
+	// Step 3: DELETE folders in subfolders tree
+	queryDeleteFolders := `
+	WITH RECURSIVE subfolders AS (
+		SELECT id FROM folders WHERE id = $1 AND user_id = $2
+		UNION ALL
+		SELECT f.id FROM folders f
+		JOIN subfolders sf ON f.parent_id = sf.id
+	)
+	DELETE FROM folders WHERE id IN (SELECT id FROM subfolders);
+	`
+	_, err = tx.Exec(r.Context(), queryDeleteFolders, parsedFolderID, userID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete subfolders"})
+		return
+	}
+
+	// Step 4: UPDATE user used_bytes with clamp
+	if totalSize > 0 {
+		_, err = tx.Exec(r.Context(),
+			`UPDATE users SET used_bytes = GREATEST(used_bytes - $1, 0) WHERE id = $2`,
+			totalSize, userID,
+		)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to update user quota"})
+			return
+		}
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to commit folder deletion"})
+		return
+	}
+
+	// Physical disk cleanup best-effort
+	for _, f := range filesToDelete {
+		if err := os.Remove(f.storagePath); err != nil {
+			log.Printf("Warning: failed to remove file shard from disk: %v", err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
-}
-
-func (fh *FolderHandler) collectSubfoldersLocked(parentID string) []string {
-	var ids []string
-	for id, f := range fh.folders {
-		if f.ParentID != nil && *f.ParentID == parentID {
-			ids = append(ids, id)
-			ids = append(ids, fh.collectSubfoldersLocked(id)...)
-		}
-	}
-	return ids
 }
