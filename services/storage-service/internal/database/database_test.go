@@ -71,6 +71,19 @@ func TestInitDB_SuccessAndMigrations(t *testing.T) {
 		t.Error("expected 'files' table to exist after migrations")
 	}
 
+	// Verify 000002_auth_schema.sql tables and columns exist
+	var userSessionsExists bool
+	err = pool.QueryRow(ctx, "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'user_sessions');").Scan(&userSessionsExists)
+	if err != nil || !userSessionsExists {
+		t.Errorf("expected 'user_sessions' table to exist after migrations, err: %v", err)
+	}
+
+	var hasPasswordHash bool
+	err = pool.QueryRow(ctx, "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'password_hash');").Scan(&hasPasswordHash)
+	if err != nil || !hasPasswordHash {
+		t.Errorf("expected 'password_hash' column in 'users' table after migrations, err: %v", err)
+	}
+
 	t.Run("RunMigrations with cancelled context returns error", func(t *testing.T) {
 		canceledCtx, cancel := context.WithCancel(context.Background())
 		cancel()
