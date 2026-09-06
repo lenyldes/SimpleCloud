@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SimpleCloud - Cloud Storage</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=1.1.0">
 </head>
 <body>
 
@@ -51,10 +51,10 @@
         <svg class="profile-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="6 9 12 15 18 9"></polyline>
         </svg>
-        <div class="profile-dropdown" id="profile-dropdown">
+        <div class="profile-dropdown" id="profile-dropdown" style="display: none;">
           <div class="profile-dropdown-header">
             <span class="profile-dropdown-label">Signed in as</span>
-            <div class="profile-dropdown-email" id="profile-dropdown-email">user@example.com</div>
+            <div class="profile-dropdown-email" id="profile-dropdown-email"></div>
           </div>
           <div class="profile-dropdown-divider"></div>
           <button id="btn-logout" class="profile-dropdown-item btn-logout" type="button">
@@ -278,6 +278,6 @@
 <!-- Toast Container -->
 <div id="toast-container"></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=1.1.0"></script>
 </body>
 </html>

@@ -286,7 +286,7 @@ body {
 }
 
 .profile-dropdown.open {
-  display: flex;
+  display: flex !important;
 }
 
 @keyframes dropdownFadeIn {

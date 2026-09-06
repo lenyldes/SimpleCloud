@@ -78,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
   init();
 
   async function init() {
+    closeProfileDropdown();
     setupEventListeners();
     await checkAuth();
     await loadWorkspaceData();
@@ -151,12 +152,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function openProfileDropdown() {
     if (!profileDropdown) return;
+    profileDropdown.style.display = 'flex';
     profileDropdown.classList.add('open');
     if (userProfile) userProfile.classList.add('active');
   }
 
   function closeProfileDropdown() {
     if (!profileDropdown) return;
+    profileDropdown.style.display = 'none';
     profileDropdown.classList.remove('open');
     if (userProfile) userProfile.classList.remove('active');
   }
