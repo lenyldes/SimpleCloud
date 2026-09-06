@@ -1,7 +1,7 @@
 ## 1. Test Suite Extension (RED State - [TEST-AGENT])
 
-- [ ] 1.1 Add failing integration tests in `services/storage-service/internal/handler/frontend_integration_test.go` asserting that `#file-upload-input` change handler in `app.js` uses `Array.from` to snapshot `e.target.files` before clearing input value, and verify test execution fails (RED).
-- [ ] 1.2 Add failing integration tests in `services/storage-service/internal/handler/frontend_integration_test.go` asserting that `#file-upload-input` in `index.html` uses class `visually-hidden` without inline `style="display: none;"`, `#btn-upload` has `type="button"`, and `.visually-hidden` is defined in `styles.css`, and verify test execution fails (RED).
+- [x] 1.1 Add failing integration tests in `services/storage-service/internal/handler/frontend_integration_test.go` asserting that `#file-upload-input` change handler in `app.js` uses `Array.from` to snapshot `e.target.files` before clearing input value, and verify test execution fails (RED).
+- [x] 1.2 Add failing integration tests in `services/storage-service/internal/handler/frontend_integration_test.go` asserting that `#file-upload-input` in `index.html` uses class `visually-hidden` without inline `style="display: none;"`, `#btn-upload` has `type="button"`, and `.visually-hidden` is defined in `styles.css`, and verify test execution fails (RED).
 
 ## 2. Markup and Accessibility Styling (GREEN State - [CODE-AGENT])
 

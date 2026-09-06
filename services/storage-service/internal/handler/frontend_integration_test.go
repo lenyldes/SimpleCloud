@@ -114,6 +114,7 @@ func TestWebFrontendCSSTokens(t *testing.T) {
 		"#0077FF",
 		".profile-dropdown",
 		".profile-dropdown.open",
+		".visually-hidden",
 	}
 
 	for _, token := range requiredTokens {
@@ -276,6 +277,132 @@ func TestWebFrontendProfileDropdownAndLogout(t *testing.T) {
 			if !strings.Contains(content, token) {
 				t.Errorf("app.js missing required logout reference %q", token)
 			}
+		}
+	})
+}
+
+func TestWebFrontendFileUploadButtonAndInput(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+
+	t.Run("app.js snapshots file input using Array.from before clearing value", func(t *testing.T) {
+		jsPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "app.js")
+		contentBytes, err := os.ReadFile(jsPath)
+		if err != nil {
+			t.Fatalf("failed to read app.js: %v", err)
+		}
+		content := string(contentBytes)
+
+		// Assert that Array.from(e.target.files) snapshot exists in app.js
+		if !strings.Contains(content, "Array.from(e.target.files)") {
+			t.Errorf("app.js missing Array.from(e.target.files) snapshot in file upload handler")
+		}
+
+		// Locate the fileUploadInput change listener
+		changeIdx := strings.Index(content, "fileUploadInput.addEventListener('change'")
+		if changeIdx == -1 {
+			t.Fatalf("app.js missing fileUploadInput change event listener")
+		}
+		changeBlock := content[changeIdx:]
+		arrayFromIdx := strings.Index(changeBlock, "Array.from(e.target.files)")
+		resetValIdx := strings.Index(changeBlock, "fileUploadInput.value = ''")
+
+		if arrayFromIdx == -1 {
+			t.Errorf("app.js change listener does not call Array.from(e.target.files)")
+		} else if resetValIdx == -1 {
+			t.Errorf("app.js change listener does not reset fileUploadInput.value")
+		} else if arrayFromIdx > resetValIdx {
+			t.Errorf("app.js snapshots e.target.files AFTER resetting fileUploadInput.value; must snapshot before clearing value")
+		}
+	})
+
+	t.Run("index.html file-upload-input uses visually-hidden class and no inline display none", func(t *testing.T) {
+		indexPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "index.html")
+		contentBytes, err := os.ReadFile(indexPath)
+		if err != nil {
+			t.Fatalf("failed to read index.html: %v", err)
+		}
+		content := string(contentBytes)
+
+		// Locate the file-upload-input tag
+		inputTagStart := strings.Index(content, `<input`)
+		var inputTag string
+		for inputTagStart != -1 {
+			tagEnd := strings.Index(content[inputTagStart:], ">")
+			if tagEnd == -1 {
+				break
+			}
+			tag := content[inputTagStart : inputTagStart+tagEnd+1]
+			if strings.Contains(tag, `id="file-upload-input"`) {
+				inputTag = tag
+				break
+			}
+			next := strings.Index(content[inputTagStart+1:], `<input`)
+			if next == -1 {
+				break
+			}
+			inputTagStart += 1 + next
+		}
+
+		if inputTag == "" {
+			t.Fatalf("index.html missing <input id=\"file-upload-input\"> element")
+		}
+
+		if strings.Contains(inputTag, `style="display: none;"`) || strings.Contains(inputTag, `display: none`) {
+			t.Errorf("<input id=\"file-upload-input\"> must not use inline style='display: none;': got %q", inputTag)
+		}
+
+		if !strings.Contains(inputTag, `visually-hidden`) {
+			t.Errorf("<input id=\"file-upload-input\"> must use class 'visually-hidden': got %q", inputTag)
+		}
+	})
+
+	t.Run("index.html btn-upload has explicit type button", func(t *testing.T) {
+		indexPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "index.html")
+		contentBytes, err := os.ReadFile(indexPath)
+		if err != nil {
+			t.Fatalf("failed to read index.html: %v", err)
+		}
+		content := string(contentBytes)
+
+		// Locate the btn-upload tag
+		btnTagStart := strings.Index(content, `<button`)
+		var btnTag string
+		for btnTagStart != -1 {
+			tagEnd := strings.Index(content[btnTagStart:], ">")
+			if tagEnd == -1 {
+				break
+			}
+			tag := content[btnTagStart : btnTagStart+tagEnd+1]
+			if strings.Contains(tag, `id="btn-upload"`) {
+				btnTag = tag
+				break
+			}
+			next := strings.Index(content[btnTagStart+1:], `<button`)
+			if next == -1 {
+				break
+			}
+			btnTagStart += 1 + next
+		}
+
+		if btnTag == "" {
+			t.Fatalf("index.html missing <button id=\"btn-upload\"> element")
+		}
+
+		if !strings.Contains(btnTag, `type="button"`) {
+			t.Errorf("<button id=\"btn-upload\"> must specify type=\"button\": got %q", btnTag)
+		}
+	})
+
+	t.Run("styles.css defines visually-hidden selector", func(t *testing.T) {
+		cssPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "styles.css")
+		contentBytes, err := os.ReadFile(cssPath)
+		if err != nil {
+			t.Fatalf("failed to read styles.css: %v", err)
+		}
+		content := string(contentBytes)
+
+		if !strings.Contains(content, ".visually-hidden") {
+			t.Errorf("styles.css missing required selector '.visually-hidden'")
 		}
 	})
 }
