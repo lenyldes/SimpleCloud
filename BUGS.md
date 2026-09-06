@@ -79,9 +79,73 @@
 
 ---
 
-### BUG-2: 2.1. Загрузка через кнопку
-Не происходит абсолютно ничего.
-Через F12 тоже тишина.
+### 🟡 BUG-2: Не выполняется загрузка выбранного файла при использовании кнопки «Upload» (#btn-upload)
+- **Компонент:** Веб-интерфейс (`services/web-frontend`: `app.js`, `index.html`, `styles.css`)
+- **Серьёзность:** High / Core Feature (Критический путь пользователя — загрузка файлов через кнопку диалога выбора полностью не работает)
+- **Связанный пункт чек-листа:** `2.1. Загрузка через кнопку`
+- **Шаги воспроизведения:**
+  1. Открыть `https://test-cloud.lenyldes.ru` (или `http://localhost:32214`) и войти в систему.
+  2. В шапке сайта нажать на кнопку «Upload» (`#btn-upload`).
+  3. В появившемся системном диалоговом окне ОС выбрать любой файл (например, тестовое изображение или текстовый документ) и нажать «Открыть» (Open).
+  4. Наблюдать поведение интерфейса, вкладку Network и консоль браузера (DevTools F12).
+- **Ожидаемый результат:**
+  - После выбора файла системный диалог закрывается, инициируется функция `handleFileUpload`.
+  - В правом нижнем углу появляется toast-уведомление `Uploading <file>...`.
+  - Отправляется HTTP-запрос `POST /api/v1/files/upload` с `FormData`.
+  - После успешного ответа появляется toast `Successfully uploaded <file>`, список файлов обновляется, и файл отображается в рабочей области.
+- **Фактический результат:**
+  - Системный диалог выбора файлов появляется, пользователь выбирает файл и подтверждает выбор.
+  - Однако после закрытия диалога абсолютно ничего не происходит:
+    - Сетевой запрос `POST /api/v1/files/upload` не отправляется (вкладка Network пуста).
+    - Toast-уведомления не появляются.
+    - В консоли DevTools F12 полная тишина (нет ошибок, исключений или предупреждений).
+- **Технический контекст и первопричина (Root Cause Analysis):**
+  - **Преждевременная очистка `input.value` и обнуление живого `FileList`:**
+    В `services/web-frontend/src/app.js:706-714`:
+    ```javascript
+    if (fileUploadInput) {
+      fileUploadInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+          const files = e.target.files;
+          fileUploadInput.value = '';
+          handleFileUpload(files);
+        }
+      });
+    }
+    ```
+    1. Свойство `e.target.files` возвращает объект `FileList`, представляющий собой динамическую (живую) коллекцию файлов, выбранных в элементе.
+    2. Переменная `files` сохраняет прямую ссылку на эту коллекцию (`const files = e.target.files;`).
+    3. Сразу на следующей строке выполняется сброс: `fileUploadInput.value = '';`.
+    4. В браузерных движках (Chromium/Blink, WebKit, Gecko) установка `input.value = ''` немедленно очищает связанный с инпутом `FileList` — коллекция мгновенно опустошается (`files.length` становится равным `0`).
+    5. Далее вызывается `handleFileUpload(files)`, где первой же строкой стоит проверка:
+       ```javascript
+       if (!files || files.length === 0) return;
+       ```
+    6. Так как `files.length === 0`, функция немедленно и молча прерывает выполнение (`early return`), не отправляя запрос и не выбрасывая ошибку в консоль.
+  - **Почему Drag-and-Drop работает иначе:**
+    В обработчике drop (`app.js:640-643`) файлы извлекаются из события перетаскивания напрямую: `await handleFileUpload(e.dataTransfer.files)`. Здесь `input.value` не сбрасывается, коллекция не обнуляется, и запрос успешно уходит на сервер (где упирается в права доступа на создание каталога — BUG-3).
+  - **Дополнительные улучшения доступности и верстки:**
+    - В `index.html:30` инпут скрыт через `style="display: none;"`. Хотя клик по кнопке вызывает `fileUploadInput.click()`, для лучшей кроссбраузерности и доступности рекомендуется перевести сокрытие на CSS-класс `.visually-hidden`.
+    - Кнопка `#btn-upload` должна иметь явный атрибут `type="button"`.
+- **План исправления (OpenSpec Scope):**
+  1. **JS (`services/web-frontend/src/app.js`):**
+     - В обработчике события `change` инпута `#file-upload-input` создать независимый снимок файлов перед очисткой инпута:
+       ```javascript
+       const files = Array.from(e.target.files);
+       fileUploadInput.value = '';
+       handleFileUpload(files);
+       ```
+     - Это гарантирует, что массив `files` сохранит все выбранные объекты `File`, и `handleFileUpload` корректно отправит их на бэкенд.
+  2. **HTML (`services/web-frontend/src/index.html`):**
+     - Заменить инлайновый стиль `style="display: none;"` у `#file-upload-input` на класс `class="visually-hidden"`.
+     - Добавить явный `type="button"` к `<button id="btn-upload">`.
+  3. **CSS (`services/web-frontend/src/styles.css`):**
+     - Добавить утилитарный класс `.visually-hidden` для безопасного сокрытия системных контролов без их исключения из дерева доступности.
+  4. **Тесты (`services/storage-service/internal/handler/frontend_integration_test.go`):**
+     - Добавить тест, верифицирующий:
+       - Наличие `Array.from` при обработке `fileUploadInput` в `app.js` (защита от регресса обнуления `FileList`).
+       - Отсутствие `style="display: none;"` у инпута загрузки в `index.html`.
+       - Наличие класса `.visually-hidden` в `styles.css`.
 
 ---
 
