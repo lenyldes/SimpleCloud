@@ -15,5 +15,5 @@
 
 ## 3. Verification & Compliance (Audit Agent)
 
-- [ ] 3.1 Run `go test -v -cover ./...` across `services/storage-service` to verify 100% pass rate and maintain 85%+ coverage in `internal/*`.
-- [ ] 3.2 Verify code formatting with `gofmt` and run `golangci-lint` to ensure build hygiene.
+- [x] 3.1 Run `go test -v -cover ./...` across `services/storage-service` to verify 100% pass rate and maintain 85%+ coverage in `internal/*`.
+- [x] 3.2 Verify code formatting with `gofmt` and run `golangci-lint` to ensure build hygiene.

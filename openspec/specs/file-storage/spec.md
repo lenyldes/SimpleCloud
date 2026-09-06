@@ -41,15 +41,26 @@ All file and folder endpoints that accept an identifier in the URL path (file do
 - **THEN** UUID parsing SHALL fail and the request SHALL be rejected before any path construction.
 
 ### Requirement: Subfolder Storage Sharding
-The system SHALL store uploaded binary files on disk using a 2-level subfolder sharding structure based on the file UUID (e.g., `/storage/<uuid[0..1]>/<uuid[2..3]>/<uuid>`). The sharded path builder SHALL reject identifiers that are not plain filenames (containing path separators or resolving outside the base directory) as defense-in-depth against path traversal, independent of HTTP-layer normalization.
+The system SHALL store uploaded binary files on disk using a 2-level subfolder sharding structure based on the file UUID (e.g., `/storage/<uuid[0..1]>/<uuid[2..3]>/<uuid>`). Parent shard subdirectories SHALL be created with mode `0775`, and saved binary files SHALL have permissions `0664` so they are accessible and readable directly by the host user. The sharded path builder SHALL reject identifiers that are not plain filenames (containing path separators or resolving outside the base directory) as defense-in-depth against path traversal, independent of HTTP-layer normalization.
 
 #### Scenario: Subfolder sharded file creation
 - **WHEN** a new file with UUID `f47a8b90-1234-5678-9abc-def012345678` is stored on disk
-- **THEN** the system automatically creates parent directories if needed and saves the file at `/storage/f4/7a/f47a8b90-1234-5678-9abc-def012345678`.
+- **THEN** the system automatically creates parent directories with mode `0775` if needed and saves the file at `/storage/f4/7a/f47a8b90-1234-5678-9abc-def012345678` with permissions `0664`.
 
 #### Scenario: Sharded path rejects traversal identifiers
 - **WHEN** the sharded path builder receives an identifier containing `/`, `\`, or whose base-name differs from the identifier itself
 - **THEN** it SHALL return an invalid-identifier error and MUST NOT return a path.
+
+### Requirement: Storage Directory Initialization and Permissions Check
+The storage service SHALL verify on startup that the configured base storage directory exists and is writable. If the directory does not exist, the system SHALL attempt to create it with mode `0775`. The system SHALL verify write access using a probe file creation and removal check; if write access is denied or directory creation fails, the service startup SHALL fail fast with an explanatory fatal error.
+
+#### Scenario: Successful storage directory initialization
+- **WHEN** the storage service starts with a valid and writable storage directory
+- **THEN** the startup check creates the directory if absent, confirms write access, and allows the service to begin serving requests.
+
+#### Scenario: Unwritable storage directory causes fail-fast shutdown
+- **WHEN** the storage service starts with a storage directory that cannot be created or is read-only
+- **THEN** the service logs a clear diagnostic error indicating the permission failure and halts startup before binding network listeners.
 
 ### Requirement: File Download and Metadata Listing
 The system SHALL stream stored binary files via `GET /api/v1/files/download/:id` with appropriate HTTP headers (`Content-Disposition`, `Content-Type`, `Content-Length`), and return a JSON list of all uploaded files via `GET /api/v1/files`. Both operations SHALL resolve file metadata exclusively from PostgreSQL and enforce ownership: a file record that does not exist or belongs to another user SHALL be indistinguishable and answered with HTTP 404. The `:id` path segment SHALL be validated as a UUID before any lookup. The `Content-Disposition` header SHALL carry both an ASCII-safe fallback `filename` and an RFC 5987 `filename*` (`UTF-8''<percent-encoded>`) value so non-ASCII (e.g. Cyrillic) filenames download with correct names, and the header values SHALL be sanitized so filename characters (`\r`, `\n`, `"`) cannot inject additional headers.

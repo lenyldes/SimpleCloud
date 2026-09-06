@@ -51,11 +51,12 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Final Code Cleanup & Technical Debt (Part 4 of Phase 7): fixed database `io/fs.FS` migrations (O2), RFC 5987 `Content-Disposition` (L5), and self-hosted Inter typography / CSP in `phase7-final-cleanup`.
   - [x] Web UI Profile Menu & Logout Mechanism (Part 5 of Phase 7): fixed BUG-1 (session termination & profile dropdown) in `fix-logout-button`.
   - [x] Web UI Upload Button & Accessible Controls (Part 6 of Phase 7): fixed BUG-2 (file upload input snapshot & accessible button) in `fix-upload-button`.
+  - [x] Storage Volume Permissions & CI/CD Error-Handling Hardening (Part 7 of Phase 7): fixed BUG-3 (storage volume permissions, su-exec privilege dropping, and CI/CD set -e) in `fix-storage-permissions`.
   - [x] Guided User Manual Testing Protocol: `[ORCHESTRATOR-AGENT]` provides interactive step-by-step test instructions and report template for user feedback (`BUGS.md`).
   - [ ] User Bug Triage & Resolution: Implement targeted fixes for all user-reported UI/UX issues and edge cases (`BUGS.md`).
     - [x] BUG-1: Web UI Profile Menu & Logout button (`fix-logout-button`).
     - [x] BUG-2: Upload button not triggering file upload (`fix-upload-button`).
-    - [ ] BUG-3: Drag-and-drop storage directory permission denied (`mkdir /storage/...: permission denied`).
+    - [x] BUG-3: Drag-and-drop storage directory permission denied (`mkdir /storage/...: permission denied`) (`fix-storage-permissions`).
   - [ ] Final v1.0 Release Verification: End-to-end audit and release build ready for production use.
 
 - [ ] **Phase 8: Future Extensions & Rich Media Features**
