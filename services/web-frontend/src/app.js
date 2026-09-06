@@ -705,8 +705,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (fileUploadInput) {
       fileUploadInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-          const files = e.target.files;
+        if (e.target.files && e.target.files.length > 0) {
+          const files = Array.from(e.target.files);
           fileUploadInput.value = '';
           handleFileUpload(files);
         }

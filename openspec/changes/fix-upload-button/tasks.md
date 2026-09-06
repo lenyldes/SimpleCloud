@@ -5,13 +5,13 @@
 
 ## 2. Markup and Accessibility Styling (GREEN State - [CODE-AGENT])
 
-- [ ] 2.1 Update `services/web-frontend/src/index.html` to replace inline `style="display: none;"` on `#file-upload-input` with class `visually-hidden`, and add explicit `type="button"` to `#btn-upload`.
-- [ ] 2.2 Add standard `.visually-hidden` utility rule in `services/web-frontend/src/styles.css` ensuring accessible off-screen clip styling.
+- [x] 2.1 Update `services/web-frontend/src/index.html` to replace inline `style="display: none;"` on `#file-upload-input` with class `visually-hidden`, and add explicit `type="button"` to `#btn-upload`.
+- [x] 2.2 Add standard `.visually-hidden` utility rule in `services/web-frontend/src/styles.css` ensuring accessible off-screen clip styling.
 
 ## 3. JavaScript Snapshot and Upload Fix (GREEN State - [CODE-AGENT])
 
-- [ ] 3.1 Update `#file-upload-input` change event listener in `services/web-frontend/src/app.js` to create an immutable snapshot `const files = Array.from(e.target.files);` before executing `fileUploadInput.value = '';` and invoking `handleFileUpload(files)`.
+- [x] 3.1 Update `#file-upload-input` change event listener in `services/web-frontend/src/app.js` to create an immutable snapshot `const files = Array.from(e.target.files);` before executing `fileUploadInput.value = '';` and invoking `handleFileUpload(files)`.
 
 ## 4. Verification and Quality Checks (GREEN State - [CODE-AGENT] & [AUDIT-AGENT])
 
-- [ ] 4.1 Run `go test -v -cover ./...` in `services/storage-service` to confirm all frontend integration and backend tests pass cleanly (GREEN) with >=85% statement coverage.
+- [x] 4.1 Run `go test -v -cover ./...` in `services/storage-service` to confirm all frontend integration and backend tests pass cleanly (GREEN) with >=85% statement coverage.
