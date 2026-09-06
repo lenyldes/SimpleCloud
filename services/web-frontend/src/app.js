@@ -29,6 +29,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const fileUploadInput = document.getElementById('file-upload-input');
   const dropzoneOverlay = document.getElementById('dropzone-overlay');
   
+  // User Profile & Dropdown Elements
+  const userProfile = document.getElementById('user-profile');
+  const profileDropdown = document.getElementById('profile-dropdown');
+  const profileDropdownEmail = document.getElementById('profile-dropdown-email');
+  const btnLogout = document.getElementById('btn-logout');
+
   // Quota Elements
   const quotaFill = document.getElementById('quota-fill');
   const quotaPercent = document.getElementById('quota-percent');
@@ -124,8 +130,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateUserAvatar() {
     const avatar = document.getElementById('user-avatar');
-    if (avatar && state.user && state.user.email) {
-      avatar.textContent = state.user.email[0].toUpperCase();
+    const emailEl = document.getElementById('profile-dropdown-email');
+    if (state.user && state.user.email) {
+      if (avatar) avatar.textContent = state.user.email[0].toUpperCase();
+      if (emailEl) emailEl.textContent = state.user.email;
+    } else {
+      if (avatar) avatar.textContent = 'U';
+      if (emailEl) emailEl.textContent = '';
+    }
+  }
+
+  function toggleProfileDropdown() {
+    if (!profileDropdown) return;
+    if (profileDropdown.classList.contains('open')) {
+      closeProfileDropdown();
+    } else {
+      openProfileDropdown();
+    }
+  }
+
+  function openProfileDropdown() {
+    if (!profileDropdown) return;
+    profileDropdown.classList.add('open');
+    if (userProfile) userProfile.classList.add('active');
+  }
+
+  function closeProfileDropdown() {
+    if (!profileDropdown) return;
+    profileDropdown.classList.remove('open');
+    if (userProfile) userProfile.classList.remove('active');
+  }
+
+  async function handleLogout() {
+    if (btnLogout) btnLogout.disabled = true;
+    try {
+      await fetch('/api/v1/auth/logout', {
+        method: 'POST',
+        credentials: 'include'
+      });
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      if (btnLogout) btnLogout.disabled = false;
+      closeProfileDropdown();
+
+      // Client state purge
+      state.user = null;
+      state.files = [];
+      state.folders = [];
+      state.currentFolderId = null;
+      state.breadcrumbs = [{ id: null, name: 'All Files' }];
+      state.quota.used = 0;
+
+      updateUserAvatar();
+      updateQuotaDisplay();
+      renderBreadcrumbs();
+      renderWorkspace();
+
+      showAuthModal();
+      showToast('You have been logged out', 'info');
     }
   }
 
@@ -681,6 +744,34 @@ document.addEventListener('DOMContentLoaded', () => {
       videoModalCloseBtn.addEventListener('click', () => {
         videoPlayer.pause();
         closeModal(modalVideo);
+      });
+    }
+
+    // User profile dropdown toggle and click-outside dismissal
+    if (userProfile) {
+      userProfile.addEventListener('click', (e) => {
+        if (e.target.closest('#profile-dropdown')) return;
+        toggleProfileDropdown();
+      });
+    }
+
+    document.addEventListener('click', (e) => {
+      if (userProfile && !userProfile.contains(e.target)) {
+        closeProfileDropdown();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeProfileDropdown();
+      }
+    });
+
+    // Logout button handler
+    if (btnLogout) {
+      btnLogout.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleLogout();
       });
     }
   }

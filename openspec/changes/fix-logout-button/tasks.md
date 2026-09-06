@@ -5,15 +5,15 @@
 
 ## 2. Web Frontend Layout and Styles (GREEN State - [CODE-AGENT])
 
-- [ ] 2.1 Update `services/web-frontend/src/index.html` to expand `#user-profile` with a dropdown chevron and `#profile-dropdown` containing user email display and `#btn-logout`.
-- [ ] 2.2 Add CSS rules in `services/web-frontend/src/styles.css` for `.profile-dropdown`, `.profile-dropdown.open`, profile header/email, and logout button hover states.
+- [x] 2.1 Update `services/web-frontend/src/index.html` to expand `#user-profile` with a dropdown chevron and `#profile-dropdown` containing user email display and `#btn-logout`.
+- [x] 2.2 Add CSS rules in `services/web-frontend/src/styles.css` for `.profile-dropdown`, `.profile-dropdown.open`, profile header/email, and logout button hover states.
 
 ## 3. Web Frontend Interactivity and Session Termination (GREEN State - [CODE-AGENT])
 
-- [ ] 3.1 Implement profile dropdown toggling and document click-outside dismissal in `services/web-frontend/src/app.js`.
-- [ ] 3.2 Update profile email display in `#profile-dropdown` on authentication in `services/web-frontend/src/app.js`.
-- [ ] 3.3 Implement `handleLogout()` in `services/web-frontend/src/app.js` with `POST /api/v1/auth/logout`, client state purge, auth modal display, and toast notification.
+- [x] 3.1 Implement profile dropdown toggling and document click-outside dismissal in `services/web-frontend/src/app.js`.
+- [x] 3.2 Update profile email display in `#profile-dropdown` on authentication in `services/web-frontend/src/app.js`.
+- [x] 3.3 Implement `handleLogout()` in `services/web-frontend/src/app.js` with `POST /api/v1/auth/logout`, client state purge, auth modal display, and toast notification.
 
 ## 4. Verification and Quality Checks (GREEN State - [CODE-AGENT] & [AUDIT-AGENT])
 
-- [ ] 4.1 Execute `go test -v -cover ./...` in `services/storage-service` to confirm all frontend integration and backend tests pass with >=85% statement coverage.
+- [x] 4.1 Execute `go test -v -cover ./...` in `services/storage-service` to confirm all frontend integration and backend tests pass with >=85% statement coverage.
