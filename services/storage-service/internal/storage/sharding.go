@@ -41,6 +41,37 @@ func NewDiskEngine(baseDir string) *DiskEngine {
 	}
 }
 
+// EnsureStorageDir verifies that the base storage directory exists and is writable.
+// If missing, it creates the directory with mode 0775. Write access is verified
+// via a probe file creation and cleanup check.
+func (e *DiskEngine) EnsureStorageDir() error {
+	info, err := os.Stat(e.baseDir)
+	if os.IsNotExist(err) {
+		if err := os.MkdirAll(e.baseDir, 0775); err != nil {
+			return fmt.Errorf("failed to create storage directory %s: %w", e.baseDir, err)
+		}
+		if err := os.Chmod(e.baseDir, 0775); err != nil {
+			return fmt.Errorf("failed to set storage directory permissions %s: %w", e.baseDir, err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("failed to stat storage directory %s: %w", e.baseDir, err)
+	} else if !info.IsDir() {
+		return fmt.Errorf("storage path %s is not a directory", e.baseDir)
+	}
+
+	probeFile, err := os.CreateTemp(e.baseDir, ".write-probe-*")
+	if err != nil {
+		return fmt.Errorf("storage directory %s is not writable: %w", e.baseDir, err)
+	}
+	probePath := probeFile.Name()
+	_ = probeFile.Close()
+	if err := os.Remove(probePath); err != nil {
+		return fmt.Errorf("failed to remove write probe file %s: %w", probePath, err)
+	}
+
+	return nil
+}
+
 // Save streams data from reader r into sharded storage path, computing SHA256 on-the-fly
 // and enforcing quota limit. Partial files are deleted on error or quota breach.
 func (e *DiskEngine) Save(fileID string, r io.Reader, quotaLimit int64) (int64, string, error) {
@@ -50,9 +81,13 @@ func (e *DiskEngine) Save(fileID string, r io.Reader, quotaLimit int64) (int64, 
 	}
 
 	dir := filepath.Dir(targetPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0775); err != nil {
 		return 0, "", fmt.Errorf("failed to create directory structure %s: %w", dir, err)
 	}
+
+	sub1 := filepath.Join(e.baseDir, fileID[0:2])
+	_ = os.Chmod(sub1, 0775)
+	_ = os.Chmod(dir, 0775)
 
 	tempFile, err := os.CreateTemp(dir, ".upload-*")
 	if err != nil {
@@ -100,6 +135,10 @@ func (e *DiskEngine) Save(fileID string, r io.Reader, quotaLimit int64) (int64, 
 
 	if err := os.Rename(tempPath, targetPath); err != nil {
 		return 0, "", fmt.Errorf("failed to move temp file to target path %s: %w", targetPath, err)
+	}
+
+	if err := os.Chmod(targetPath, 0664); err != nil {
+		return 0, "", fmt.Errorf("failed to set permissions on saved file %s: %w", targetPath, err)
 	}
 
 	success = true

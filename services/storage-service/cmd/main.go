@@ -108,6 +108,9 @@ func main() {
 
 	authHandler := auth.NewAuthHandlerWithTTL(authSvc, sessionTTL)
 	engine := storage.NewDiskEngine(storageDir)
+	if err := engine.EnsureStorageDir(); err != nil {
+		log.Fatalf("Storage directory initialization failed: %v", err)
+	}
 	fileHandler := handler.NewFileHandler(engine, dbPool, quotaBytes)
 	folderHandler := handler.NewFolderHandler(dbPool, engine)
 

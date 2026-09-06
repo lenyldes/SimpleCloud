@@ -97,5 +97,6 @@ jobs:
           script: |
             cd /opt/simplecloud || cd ~/SimpleCloud
             git pull origin main
+            mkdir -p data/storage
             docker compose up -d --build
             docker compose exec -T caddy caddy reload 2>/dev/null || docker exec caddy caddy reload 2>/dev/null || true
