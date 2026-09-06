@@ -247,3 +247,68 @@ func TestServerGracefulShutdown(t *testing.T) {
 		t.Fatal("server failed to shutdown gracefully within 5 seconds")
 	}
 }
+
+// Regression guards for storage volume permissions (OpenSpec change fix-storage-permissions, BUG-3).
+
+func TestDockerfileInstallsSuExecAndWiresEntrypoint(t *testing.T) {
+	dockerfilePath := filepath.Join(cmdDir(t), "..", "Dockerfile")
+	data, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("failed to read Dockerfile at %s: %v", dockerfilePath, err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "su-exec") {
+		t.Errorf("Dockerfile must install su-exec for runtime privilege dropping (BUG-3)")
+	}
+	if !strings.Contains(content, "entrypoint.sh") {
+		t.Errorf("Dockerfile must copy and configure entrypoint.sh (BUG-3)")
+	}
+	if !strings.Contains(content, "ENTRYPOINT") {
+		t.Errorf("Dockerfile must specify ENTRYPOINT for container startup permissions initialization (BUG-3)")
+	}
+}
+
+func TestEntrypointScriptExistsAndIsExecutable(t *testing.T) {
+	entrypointPath := filepath.Join(cmdDir(t), "..", "entrypoint.sh")
+	info, err := os.Stat(entrypointPath)
+	if err != nil {
+		t.Fatalf("entrypoint.sh must exist at %s: %v (BUG-3)", entrypointPath, err)
+	}
+
+	if info.Mode().Perm()&0111 == 0 {
+		t.Errorf("entrypoint.sh must have executable permissions, got %#o (BUG-3)", info.Mode().Perm())
+	}
+
+	data, err := os.ReadFile(entrypointPath)
+	if err != nil {
+		t.Fatalf("failed to read entrypoint.sh: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "PUID") || !strings.Contains(content, "PGID") {
+		t.Errorf("entrypoint.sh must handle PUID and PGID environment variables (BUG-3)")
+	}
+	if !strings.Contains(content, "su-exec") {
+		t.Errorf("entrypoint.sh must invoke su-exec to drop privileges (BUG-3)")
+	}
+	if !strings.Contains(content, "0775") && !strings.Contains(content, "775") {
+		t.Errorf("entrypoint.sh must ensure storage directory permissions 0775 (BUG-3)")
+	}
+}
+
+func TestComposePassesStorageUserAndGroupIDs(t *testing.T) {
+	composePath := filepath.Join(repoRoot(t), "docker-compose.yml")
+	data, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatalf("failed to read docker-compose.yml: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "PUID") {
+		t.Errorf("docker-compose.yml must pass PUID to storage-service (BUG-3)")
+	}
+	if !strings.Contains(content, "PGID") {
+		t.Errorf("docker-compose.yml must pass PGID to storage-service (BUG-3)")
+	}
+}

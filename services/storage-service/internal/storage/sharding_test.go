@@ -7,6 +7,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
@@ -214,4 +216,139 @@ func TestDiskStorageEngine_GetFilePath(t *testing.T) {
 			t.Error("expected non-empty path")
 		}
 	})
+}
+
+// TestDiskStorageEngine_EnsureStorageDir verifies startup storage directory initialization,
+// probe write-and-remove verification, and error handling on unwritable paths (Task 1.1).
+func TestDiskStorageEngine_EnsureStorageDir(t *testing.T) {
+	t.Run("Successfully creates missing directory with 0775 and cleans up probe file", func(t *testing.T) {
+		tempDir := t.TempDir()
+		targetDir := filepath.Join(tempDir, "nested", "storage")
+
+		engine := storage.NewDiskEngine(targetDir)
+		err := engine.EnsureStorageDir()
+		if err != nil {
+			t.Fatalf("expected successful EnsureStorageDir, got: %v", err)
+		}
+
+		info, err := os.Stat(targetDir)
+		if err != nil {
+			t.Fatalf("failed to stat target directory: %v", err)
+		}
+		if !info.IsDir() {
+			t.Fatalf("expected target path to be a directory")
+		}
+		if info.Mode().Perm() != 0775 {
+			t.Errorf("expected directory permissions 0775, got %#o", info.Mode().Perm())
+		}
+
+		// Verify probe file was removed and cleaned up
+		entries, err := os.ReadDir(targetDir)
+		if err != nil {
+			t.Fatalf("failed to read target directory: %v", err)
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".write-probe") {
+				t.Errorf("residual probe file found: %s", entry.Name())
+			}
+		}
+	})
+
+	t.Run("Existing writable directory succeeds idempotently", func(t *testing.T) {
+		tempDir := t.TempDir()
+		engine := storage.NewDiskEngine(tempDir)
+
+		if err := engine.EnsureStorageDir(); err != nil {
+			t.Fatalf("first EnsureStorageDir failed: %v", err)
+		}
+		if err := engine.EnsureStorageDir(); err != nil {
+			t.Fatalf("second EnsureStorageDir failed: %v", err)
+		}
+
+		entries, err := os.ReadDir(tempDir)
+		if err != nil {
+			t.Fatalf("failed to read dir: %v", err)
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".write-probe") {
+				t.Errorf("residual probe file found: %s", entry.Name())
+			}
+		}
+	})
+
+	t.Run("Fails when directory is not writable", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("skipping read-only directory test on windows")
+		}
+		tempDir := t.TempDir()
+		roDir := filepath.Join(tempDir, "readonly")
+		if err := os.Mkdir(roDir, 0555); err != nil {
+			t.Fatalf("failed to create readonly dir: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = os.Chmod(roDir, 0755)
+		})
+
+		engine := storage.NewDiskEngine(roDir)
+		err := engine.EnsureStorageDir()
+		if err == nil {
+			t.Fatal("expected error on read-only storage directory, got nil")
+		}
+	})
+
+	t.Run("Fails when target path is blocked by a file", func(t *testing.T) {
+		tempDir := t.TempDir()
+		regularFile := filepath.Join(tempDir, "regular-file")
+		if err := os.WriteFile(regularFile, []byte("data"), 0644); err != nil {
+			t.Fatalf("failed to write file: %v", err)
+		}
+
+		blockedDir := filepath.Join(regularFile, "subfolder")
+		engine := storage.NewDiskEngine(blockedDir)
+		err := engine.EnsureStorageDir()
+		if err == nil {
+			t.Fatal("expected error when directory creation is blocked by a file, got nil")
+		}
+	})
+}
+
+// TestDiskStorageEngine_Permissions verifies that Save creates shard parent directories
+// with mode 0775 and saves binary files with mode 0664 for host user accessibility (Task 1.2).
+func TestDiskStorageEngine_Permissions(t *testing.T) {
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fileID := "f47a8b90-1234-5678-9abc-def012345678"
+	content := []byte("content for permissions verification")
+
+	_, _, err := engine.Save(fileID, bytes.NewReader(content), 10000)
+	if err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	savedPath := filepath.Join(tempDir, "f4", "7a", fileID)
+	fileInfo, err := os.Stat(savedPath)
+	if err != nil {
+		t.Fatalf("failed to stat saved file: %v", err)
+	}
+	if perm := fileInfo.Mode().Perm(); perm != 0664 {
+		t.Errorf("expected saved file permissions 0664, got %#o", perm)
+	}
+
+	shardL1 := filepath.Join(tempDir, "f4")
+	l1Info, err := os.Stat(shardL1)
+	if err != nil {
+		t.Fatalf("failed to stat shard level 1 directory: %v", err)
+	}
+	if perm := l1Info.Mode().Perm(); perm != 0775 {
+		t.Errorf("expected shard level 1 directory permissions 0775, got %#o", perm)
+	}
+
+	shardL2 := filepath.Join(tempDir, "f4", "7a")
+	l2Info, err := os.Stat(shardL2)
+	if err != nil {
+		t.Fatalf("failed to stat shard level 2 directory: %v", err)
+	}
+	if perm := l2Info.Mode().Perm(); perm != 0775 {
+		t.Errorf("expected shard level 2 directory permissions 0775, got %#o", perm)
+	}
 }
