@@ -35,11 +35,15 @@ The frontend upload request SHALL only include fields the API defines (`file`, o
 - **THEN** the multipart request body SHALL contain the file part and, when a folder is open, `folder_id` only — no `path` field with an undefined value.
 
 ### Requirement: Repeated Upload of the Same File
-The frontend SHALL reset the file selection input after dispatching an upload so that selecting the identical file again fires a change event and re-uploads it.
+The frontend SHALL snapshot the selected file collection before clearing the file input element's value so that chosen files are safely passed to the upload handler and selecting the identical file again fires a change event and re-uploads it.
 
 #### Scenario: Uploading the same file twice in a row
 - **WHEN** the user selects file A, the upload starts, and the user selects file A again from the file picker
 - **THEN** the second selection SHALL trigger a new upload of file A.
+
+#### Scenario: File selection snapshot prevents premature FileList truncation
+- **WHEN** the user selects one or more files via the file picker
+- **THEN** the system SHALL retain an immutable snapshot of the selected files to execute the upload and reset the file input element value without emptying the payload.
 
 ### Requirement: File Action Operations and Modals
 The system SHALL provide file previews (image lightbox, text/code viewer, video player), direct download links, file deletion, and new folder creation.
@@ -115,5 +119,13 @@ The web frontend SHALL provide an interactive user profile menu in the header ba
 - **WHEN** user clicks the logout button in the profile dropdown menu
 - **THEN** system SHALL send a `POST /api/v1/auth/logout` request with credentials, reset client-side user and file state, hide the profile dropdown, display the authentication modal, and present a confirmation toast message.
 
+### Requirement: Accessible File Upload Button and Input Control
+The web frontend SHALL provide an accessible file upload trigger button and an associated hidden file input element styled with non-destructive visually hidden techniques, allowing file selection dialog activation across browsers without suppressing accessibility tree presence.
 
+#### Scenario: Triggering file upload via button
+- **WHEN** user clicks the "Upload" button in the header actions area
+- **THEN** system SHALL trigger the native file selection dialog from the hidden file input element and upload the chosen files.
 
+#### Scenario: Visually hidden input styling
+- **WHEN** inspecting the file input element in the DOM
+- **THEN** it SHALL use a visually hidden utility class rather than inline display-none styling, maintaining its programmatic association and accessibility semantics while preventing visual clutter.
