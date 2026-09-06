@@ -312,3 +312,55 @@ func TestComposePassesStorageUserAndGroupIDs(t *testing.T) {
 		t.Errorf("docker-compose.yml must pass PGID to storage-service (BUG-3)")
 	}
 }
+
+// Regression guard: deploy step in .github/workflows/ci.yml must start with set -e
+// so errors from docker compose or git pull are not masked by subsequent commands.
+func TestCIDeployScriptUsesSetE(t *testing.T) {
+	ciPath := filepath.Join(repoRoot(t), ".github", "workflows", "ci.yml")
+	data, err := os.ReadFile(ciPath)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", ciPath, err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var inDeployJob bool
+	var inDeployScript bool
+	var scriptIndent int
+	var scriptLines []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(line, "  deploy:") || strings.Contains(line, "Deploy to Production") {
+			inDeployJob = true
+		}
+
+		if inDeployJob && !inDeployScript && strings.HasPrefix(trimmed, "script:") {
+			inDeployScript = true
+			scriptIndent = len(line) - len(strings.TrimLeft(line, " "))
+			continue
+		}
+
+		if inDeployScript {
+			if trimmed == "" {
+				continue
+			}
+			indent := len(line) - len(strings.TrimLeft(line, " "))
+			if indent <= scriptIndent {
+				break
+			}
+			scriptLines = append(scriptLines, trimmed)
+		}
+	}
+
+	if !inDeployJob {
+		t.Fatal("deploy job not found in ci.yml")
+	}
+	if len(scriptLines) == 0 {
+		t.Fatal("failed to extract deploy script from ci.yml")
+	}
+
+	firstCmd := scriptLines[0]
+	if firstCmd != "set -e" {
+		t.Errorf("deploy script in ci.yml must start with 'set -e' to prevent masking errors, got first command: %q", firstCmd)
+	}
+}
