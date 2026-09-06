@@ -1,7 +1,7 @@
 ## 1. Test Suite Extension (RED State - [TEST-AGENT])
 
-- [ ] 1.1 Add assertions in `frontend_integration_test.go` for `#profile-dropdown` and `#btn-logout` in `index.html`, and verify test execution fails (RED).
-- [ ] 1.2 Add assertions in `frontend_integration_test.go` for profile dropdown CSS rules in `styles.css` and `/api/v1/auth/logout` reference in `app.js`, and verify test execution fails (RED).
+- [x] 1.1 Add assertions in `frontend_integration_test.go` for `#profile-dropdown` and `#btn-logout` in `index.html`, and verify test execution fails (RED).
+- [x] 1.2 Add assertions in `frontend_integration_test.go` for profile dropdown CSS rules in `styles.css` and `/api/v1/auth/logout` reference in `app.js`, and verify test execution fails (RED).
 
 ## 2. Web Frontend Layout and Styles (GREEN State - [CODE-AGENT])
 

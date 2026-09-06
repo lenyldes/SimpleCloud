@@ -84,6 +84,9 @@ func TestWebFrontendHTMLStructure(t *testing.T) {
 		{"Image lightbox modal", `id="modal-lightbox"`},
 		{"Text viewer modal", `id="modal-text"`},
 		{"Video player modal", `id="modal-video"`},
+		{"Profile dropdown menu", `id="profile-dropdown"`},
+		{"Profile dropdown email", `id="profile-dropdown-email"`},
+		{"Logout button", `id="btn-logout"`},
 	}
 
 	for _, elem := range requiredElements {
@@ -109,6 +112,8 @@ func TestWebFrontendCSSTokens(t *testing.T) {
 		":root",
 		"--color-primary",
 		"#0077FF",
+		".profile-dropdown",
+		".profile-dropdown.open",
 	}
 
 	for _, token := range requiredTokens {
@@ -134,6 +139,7 @@ func TestWebFrontendJavaScriptAPIEndpoints(t *testing.T) {
 		"/api/v1/files",
 		"/api/v1/files/upload",
 		"/api/v1/auth",
+		"/api/v1/auth/logout",
 	}
 
 	for _, endpoint := range requiredEndpoints {
@@ -204,4 +210,72 @@ func TestWebFrontendStaticDeliveryHTTP(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWebFrontendProfileDropdownAndLogout(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+
+	t.Run("Dropdown HTML structure exists", func(t *testing.T) {
+		indexPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "index.html")
+		contentBytes, err := os.ReadFile(indexPath)
+		if err != nil {
+			t.Fatalf("failed to read index.html: %v", err)
+		}
+		content := string(contentBytes)
+
+		requiredElements := []struct {
+			name  string
+			token string
+		}{
+			{"Profile dropdown menu", `id="profile-dropdown"`},
+			{"Profile dropdown email", `id="profile-dropdown-email"`},
+			{"Logout button", `id="btn-logout"`},
+		}
+
+		for _, elem := range requiredElements {
+			if !strings.Contains(content, elem.token) {
+				t.Errorf("index.html missing %s (expected substring %q)", elem.name, elem.token)
+			}
+		}
+	})
+
+	t.Run("Dropdown CSS rules exist", func(t *testing.T) {
+		cssPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "styles.css")
+		contentBytes, err := os.ReadFile(cssPath)
+		if err != nil {
+			t.Fatalf("failed to read styles.css: %v", err)
+		}
+		content := string(contentBytes)
+
+		requiredRules := []string{
+			".profile-dropdown",
+			".profile-dropdown.open",
+		}
+
+		for _, rule := range requiredRules {
+			if !strings.Contains(content, rule) {
+				t.Errorf("styles.css missing required dropdown rule or selector %q", rule)
+			}
+		}
+	})
+
+	t.Run("Logout JavaScript API and handler exist", func(t *testing.T) {
+		jsPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "app.js")
+		contentBytes, err := os.ReadFile(jsPath)
+		if err != nil {
+			t.Fatalf("failed to read app.js: %v", err)
+		}
+		content := string(contentBytes)
+
+		requiredTokens := []string{
+			"/api/v1/auth/logout",
+			"handleLogout",
+		}
+
+		for _, token := range requiredTokens {
+			if !strings.Contains(content, token) {
+				t.Errorf("app.js missing required logout reference %q", token)
+			}
+		}
+	})
 }
