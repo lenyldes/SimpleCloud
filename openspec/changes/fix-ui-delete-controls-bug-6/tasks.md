@@ -2,10 +2,11 @@
 
 ## 1. Test Suite (RED Phase - [TEST-AGENT])
 
-- [ ] 1.1 Add HTML structure tests in `internal/handler/web_test.go` verifying presence of `#modal-confirm-delete`, `#confirm-delete-title`, `#confirm-delete-msg`, `#confirm-delete-cancel`, and `#confirm-delete-btn` in `index.html`.
-- [ ] 1.2 Add CSS token tests in `internal/handler/web_test.go` verifying presence of `#modal-confirm-delete`, `.btn-danger`, and `.btn-icon-danger` in `css/modals.css`.
-- [ ] 1.3 Add JS logic tests in `internal/handler/web_test.go` verifying presence of `openConfirmDeleteModal`, `closeConfirmDeleteModal`, and delete button event bindings in frontend scripts.
-- [ ] 1.4 Verify all new tests fail in RED state (`go test -v ./internal/handler/... -run TestWebFrontend`) prior to implementation.
+- [x] 1.1 Add HTML structure tests in `internal/handler/web_test.go` verifying presence of `#modal-confirm-delete`, `#confirm-delete-title`, `#confirm-delete-msg`, `#confirm-delete-cancel`, and `#confirm-delete-btn` in `index.html`.
+- [x] 1.2 Add CSS token tests in `internal/handler/web_test.go` verifying presence of `#modal-confirm-delete`, `.btn-danger`, and `.btn-icon-danger` in `css/modals.css`.
+- [x] 1.3 Add JS logic tests in `internal/handler/web_test.go` verifying presence of `openConfirmDeleteModal`, `closeConfirmDeleteModal`, and delete button event bindings in frontend scripts.
+- [x] 1.4 Verify all new tests fail in RED state (`go test -v ./internal/handler/... -run TestWebFrontend`) prior to implementation.
+
 
 ## 2. HTML & CSS Implementation ([CODE-AGENT])
 

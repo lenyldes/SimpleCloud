@@ -164,3 +164,80 @@ func TestNginxRateLimitingConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestWebFrontendConfirmDeleteModalStructure(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+	indexPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "index.html")
+
+	contentBytes, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("failed to read index.html: %v", err)
+	}
+	content := string(contentBytes)
+
+	requiredElements := []struct {
+		name  string
+		token string
+	}{
+		{"Confirm Delete Modal Backdrop", `id="modal-confirm-delete"`},
+		{"Confirm Delete Modal Title", `id="confirm-delete-title"`},
+		{"Confirm Delete Message Container", `id="confirm-delete-msg"`},
+		{"Confirm Delete Cancel Button", `id="confirm-delete-cancel"`},
+		{"Confirm Delete Action Button", `id="confirm-delete-btn"`},
+	}
+
+	for _, elem := range requiredElements {
+		t.Run(elem.name, func(t *testing.T) {
+			if !strings.Contains(content, elem.token) {
+				t.Errorf("index.html missing required confirm delete modal element %s (expected substring %q)", elem.name, elem.token)
+			}
+		})
+	}
+}
+
+func TestWebFrontendDeleteButtonStyles(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+	modalsCssPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "css", "modals.css")
+
+	contentBytes, err := os.ReadFile(modalsCssPath)
+	if err != nil {
+		t.Fatalf("failed to read modals.css: %v", err)
+	}
+	content := string(contentBytes)
+
+	requiredTokens := []string{
+		"#modal-confirm-delete",
+		".btn-danger",
+		".btn-icon-danger",
+	}
+
+	for _, token := range requiredTokens {
+		t.Run(token, func(t *testing.T) {
+			if !strings.Contains(content, token) {
+				t.Errorf("css/modals.css missing required style selector or class %q", token)
+			}
+		})
+	}
+}
+
+func TestWebFrontendDeleteLogicJS(t *testing.T) {
+	content := readAllFrontendJS(t)
+
+	requiredLogicTokens := []struct {
+		name  string
+		token string
+	}{
+		{"Open Confirm Delete Modal Function", "openConfirmDeleteModal"},
+		{"Close Confirm Delete Modal Function", "closeConfirmDeleteModal"},
+		{"Delete File API Invocation", "apiDeleteFile"},
+		{"Delete Folder API Invocation", "apiDeleteFolder"},
+	}
+
+	for _, elem := range requiredLogicTokens {
+		t.Run(elem.name, func(t *testing.T) {
+			if !strings.Contains(content, elem.token) {
+				t.Errorf("JavaScript modules missing required frontend delete logic %s (expected token %q)", elem.name, elem.token)
+			}
+		})
+	}
+}
