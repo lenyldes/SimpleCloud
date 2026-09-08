@@ -1,7 +1,7 @@
 ## 1. Test Suite & Architecture Guard (RED Phase - [TEST-AGENT])
 
-- [ ] 1.1 Implement `TestMaxFileLineCount` in `services/storage-service/cmd/architecture_test.go` scanning repository files via `git ls-files` with double-check binary exclusion (known binary extensions + 4KB null-byte `0x00` and invalid UTF-8 check) enforcing `<= 450` lines ceiling.
-- [ ] 1.2 Verify `TestMaxFileLineCount` fails as expected (RED state) listing the 5 known violating files (`file_test.go`, `app.js`, `folder_test.go`, `file.go`, `handler_test.go`).
+- [x] 1.1 Implement `TestMaxFileLineCount` in `services/storage-service/cmd/architecture_test.go` scanning repository files via `git ls-files` with double-check binary exclusion (known binary extensions + 4KB null-byte `0x00` and invalid UTF-8 check) enforcing `<= 450` lines ceiling.
+- [x] 1.2 Verify `TestMaxFileLineCount` fails as expected (RED state) listing the 5 known violating files (`file_test.go`, `app.js`, `folder_test.go`, `file.go`, `handler_test.go`).
 
 ## 2. Backend Handler & Test Decomposition (GREEN Phase - [CODE-AGENT])
 
