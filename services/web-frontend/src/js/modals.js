@@ -184,3 +184,50 @@ async function handleFileClick(file) {
     window.open(downloadUrl, '_blank');
   }
 }
+
+// Module state for pending item to delete
+let pendingDeleteItem = null;
+
+/**
+ * Open confirmation modal to delete a file or folder.
+ * @param {string} id
+ * @param {'file'|'folder'} type
+ * @param {string} name
+ */
+function openConfirmDeleteModal(id, type, name) {
+  pendingDeleteItem = { id, type, name };
+  const modal = document.getElementById('modal-confirm-delete');
+  const title = document.getElementById('confirm-delete-title');
+  const msg = document.getElementById('confirm-delete-msg');
+  const safeName = typeof escapeHtml === 'function' ? escapeHtml(name) : name;
+
+  if (title) {
+    title.textContent = type === 'folder' ? 'Delete Folder' : 'Delete File';
+  }
+  if (msg) {
+    if (type === 'folder') {
+      msg.innerHTML = `Are you sure you want to delete <strong>${safeName}</strong>?<br><span style="color: var(--color-danger); font-size: var(--font-size-sm); display: inline-block; margin-top: 8px;">Warning: This will permanently delete the folder and all its contents.</span>`;
+    } else {
+      msg.innerHTML = `Are you sure you want to delete <strong>${safeName}</strong>?`;
+    }
+  }
+  openModal(modal);
+}
+
+/**
+ * Close confirmation modal for delete and clear pending item.
+ */
+function closeConfirmDeleteModal() {
+  const modal = document.getElementById('modal-confirm-delete');
+  closeModal(modal);
+  pendingDeleteItem = null;
+}
+
+/**
+ * Get current pending deletion item.
+ * @returns {{ id: string, type: string, name: string }|null}
+ */
+function getPendingDeleteItem() {
+  return pendingDeleteItem;
+}
+

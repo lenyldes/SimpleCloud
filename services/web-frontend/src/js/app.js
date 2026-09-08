@@ -283,4 +283,73 @@ function setupEventListeners() {
       handleLogout();
     });
   }
+
+  // Confirm delete modal listeners
+  const modalConfirmDelete = document.getElementById('modal-confirm-delete');
+  const confirmDeleteCancel = document.getElementById('confirm-delete-cancel');
+  const confirmDeleteClose = document.getElementById('confirm-delete-close');
+  const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+  const workspaceEl = document.getElementById('workspace');
+
+  if (modalConfirmDelete) {
+    modalConfirmDelete.addEventListener('click', (e) => {
+      if (e.target === modalConfirmDelete) {
+        closeConfirmDeleteModal();
+      }
+    });
+  }
+
+  if (confirmDeleteCancel) confirmDeleteCancel.addEventListener('click', closeConfirmDeleteModal);
+  if (confirmDeleteClose) confirmDeleteClose.addEventListener('click', closeConfirmDeleteModal);
+  if (confirmDeleteBtn) confirmDeleteBtn.addEventListener('click', handleConfirmDelete);
+
+  // Event delegation on workspace for delete action buttons
+  if (workspaceEl) {
+    workspaceEl.addEventListener('click', (e) => {
+      const deleteBtn = e.target.closest('.btn-action-delete');
+      if (deleteBtn) {
+        e.stopPropagation();
+        e.preventDefault();
+        const id = deleteBtn.dataset.id;
+        const type = deleteBtn.dataset.type;
+        const name = deleteBtn.dataset.name;
+        if (typeof openConfirmDeleteModal === 'function') {
+          openConfirmDeleteModal(id, type, name);
+        }
+      }
+    });
+  }
 }
+
+/**
+ * Handle confirmation of file or folder deletion.
+ */
+async function handleConfirmDelete() {
+  const item = typeof getPendingDeleteItem === 'function' ? getPendingDeleteItem() : null;
+  if (!item || !item.id) {
+    if (typeof closeConfirmDeleteModal === 'function') closeConfirmDeleteModal();
+    return;
+  }
+
+  const { id, type, name } = item;
+  const isFolder = type === 'folder';
+
+  try {
+    const res = isFolder
+      ? (window.api && window.api.deleteFolder ? await window.api.deleteFolder(id) : await fetchWithAuth(`/api/v1/folders/${encodeURIComponent(id)}`, { method: 'DELETE' }))
+      : (window.api && window.api.deleteFile ? await window.api.deleteFile(id) : await fetchWithAuth(`/api/v1/files/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+
+    if (res && res.ok) {
+      if (typeof closeConfirmDeleteModal === 'function') closeConfirmDeleteModal();
+      showToast(`${isFolder ? 'Folder' : 'File'} "${name}" deleted successfully`, 'success');
+      await loadWorkspaceData();
+    } else {
+      const errData = res ? await res.json().catch(() => ({})) : {};
+      showToast(errData.error || `Failed to delete ${isFolder ? 'folder' : 'file'}`, 'danger');
+    }
+  } catch (err) {
+    console.error('Delete error:', err);
+    showToast(`Failed to delete ${isFolder ? 'folder' : 'file'}`, 'danger');
+  }
+}
+

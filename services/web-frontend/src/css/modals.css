@@ -184,3 +184,46 @@
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(0, 119, 255, 0.15);
 }
+
+/* Confirm Delete Modal & Action Danger Buttons */
+#modal-confirm-delete {
+  z-index: 150;
+}
+
+.confirm-delete-msg {
+  color: var(--color-text-main);
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+  margin: 0;
+  word-break: break-word;
+}
+
+.btn-danger {
+  background-color: var(--color-danger);
+  color: var(--color-text-inverse);
+}
+
+.btn-danger:hover {
+  background-color: #d32f2f;
+  box-shadow: 0 2px 8px rgba(230, 70, 70, 0.3);
+}
+
+.btn-icon-danger {
+  color: var(--color-text-secondary);
+}
+
+.btn-icon-danger:hover {
+  background-color: var(--color-danger-light);
+  color: var(--color-danger);
+}
+
+.btn-action-delete {
+  cursor: pointer;
+}
+
+.list-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+
