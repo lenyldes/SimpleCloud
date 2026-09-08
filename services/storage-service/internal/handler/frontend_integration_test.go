@@ -29,16 +29,52 @@ func findRepoRoot(t *testing.T) string {
 	}
 }
 
+// readAllFrontendCSS reads CSS content from services/web-frontend/src/styles.css if present,
+// or combines all .css files in services/web-frontend/src/css/ if modularized.
+func readAllFrontendCSS(t *testing.T) string {
+	t.Helper()
+	repoRoot := findRepoRoot(t)
+	srcDir := filepath.Join(repoRoot, "services", "web-frontend", "src")
+	legacyCSS := filepath.Join(srcDir, "styles.css")
+	if b, err := os.ReadFile(legacyCSS); err == nil {
+		return string(b)
+	}
+
+	cssDir := filepath.Join(srcDir, "css")
+	files, err := filepath.Glob(filepath.Join(cssDir, "*.css"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no CSS files found in %s or %s", legacyCSS, cssDir)
+	}
+	var sb strings.Builder
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("failed to read CSS file %s: %v", f, err)
+		}
+		sb.Write(b)
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
 func TestWebFrontendStaticAssetsExistence(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	webFrontendDir := filepath.Join(repoRoot, "services", "web-frontend")
 
 	requiredFiles := []string{
 		filepath.Join(webFrontendDir, "src", "index.html"),
-		filepath.Join(webFrontendDir, "src", "styles.css"),
 		filepath.Join(webFrontendDir, "src", "app.js"),
 		filepath.Join(webFrontendDir, "nginx.conf"),
 		filepath.Join(webFrontendDir, "Dockerfile"),
+	}
+
+	cssDir := filepath.Join(webFrontendDir, "src", "css")
+	if info, err := os.Stat(cssDir); err == nil && info.IsDir() {
+		for _, mod := range []string{"base.css", "layout.css", "components.css", "modals.css"} {
+			requiredFiles = append(requiredFiles, filepath.Join(cssDir, mod))
+		}
+	} else {
+		requiredFiles = append(requiredFiles, filepath.Join(webFrontendDir, "src", "styles.css"))
 	}
 
 	for _, filePath := range requiredFiles {
@@ -99,14 +135,7 @@ func TestWebFrontendHTMLStructure(t *testing.T) {
 }
 
 func TestWebFrontendCSSTokens(t *testing.T) {
-	repoRoot := findRepoRoot(t)
-	cssPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "styles.css")
-
-	contentBytes, err := os.ReadFile(cssPath)
-	if err != nil {
-		t.Fatalf("failed to read styles.css: %v", err)
-	}
-	content := string(contentBytes)
+	content := readAllFrontendCSS(t)
 
 	requiredTokens := []string{
 		":root",
@@ -194,8 +223,22 @@ func TestWebFrontendStaticDeliveryHTTP(t *testing.T) {
 	}{
 		{"/", http.StatusOK},
 		{"/index.html", http.StatusOK},
-		{"/styles.css", http.StatusOK},
 		{"/app.js", http.StatusOK},
+	}
+
+	if _, err := os.Stat(filepath.Join(srcDir, "styles.css")); err == nil {
+		tests = append(tests, struct {
+			path         string
+			expectedCode int
+		}{"/styles.css", http.StatusOK})
+	}
+	if _, err := os.Stat(filepath.Join(srcDir, "css", "base.css")); err == nil {
+		for _, mod := range []string{"base.css", "layout.css", "components.css", "modals.css"} {
+			tests = append(tests, struct {
+				path         string
+				expectedCode int
+			}{"/css/" + mod, http.StatusOK})
+		}
 	}
 
 	for _, tt := range tests {
@@ -241,12 +284,7 @@ func TestWebFrontendProfileDropdownAndLogout(t *testing.T) {
 	})
 
 	t.Run("Dropdown CSS rules exist", func(t *testing.T) {
-		cssPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "styles.css")
-		contentBytes, err := os.ReadFile(cssPath)
-		if err != nil {
-			t.Fatalf("failed to read styles.css: %v", err)
-		}
-		content := string(contentBytes)
+		content := readAllFrontendCSS(t)
 
 		requiredRules := []string{
 			".profile-dropdown",
@@ -393,16 +431,11 @@ func TestWebFrontendFileUploadButtonAndInput(t *testing.T) {
 		}
 	})
 
-	t.Run("styles.css defines visually-hidden selector", func(t *testing.T) {
-		cssPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "styles.css")
-		contentBytes, err := os.ReadFile(cssPath)
-		if err != nil {
-			t.Fatalf("failed to read styles.css: %v", err)
-		}
-		content := string(contentBytes)
+	t.Run("CSS defines visually-hidden selector", func(t *testing.T) {
+		content := readAllFrontendCSS(t)
 
 		if !strings.Contains(content, ".visually-hidden") {
-			t.Errorf("styles.css missing required selector '.visually-hidden'")
+			t.Errorf("CSS missing required selector '.visually-hidden'")
 		}
 	})
 }

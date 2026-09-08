@@ -68,14 +68,7 @@ func TestWebFrontendNavigationElements(t *testing.T) {
 }
 
 func TestWebFrontendAuthModalStyles(t *testing.T) {
-	repoRoot := findRepoRoot(t)
-	cssPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "styles.css")
-
-	contentBytes, err := os.ReadFile(cssPath)
-	if err != nil {
-		t.Fatalf("failed to read styles.css: %v", err)
-	}
-	content := string(contentBytes)
+	content := readAllFrontendCSS(t)
 
 	requiredCSSTokens := []string{
 		"#modal-auth",

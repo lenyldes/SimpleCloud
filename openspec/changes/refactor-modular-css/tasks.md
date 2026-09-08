@@ -1,6 +1,6 @@
 ## 1. Automated Parity & Structure Tests (Test Agent)
 
-- [ ] 1.1 Create permanent dynamic frontend integrity test (`services/storage-service/internal/handler/frontend_assets_test.go`) that acts as a continuous CI linter:
+- [x] 1.1 Create permanent dynamic frontend integrity test (`services/storage-service/internal/handler/frontend_assets_test.go`) that acts as a continuous CI linter:
   - **Dynamic Class Presence**: Parses `index.html` and `app.js` to extract all referenced CSS classes, and asserts that 100% of these classes are defined in `services/web-frontend/src/css/*.css` (dynamic validation that scales automatically as new features/classes are added).
   - **File Modularity & Size Guard**: Asserts that `services/web-frontend/src/css/` contains `base.css`, `layout.css`, `components.css`, `modals.css`, and that no CSS module exceeds the 450-line agent limit.
   - **Link Integrity**: Asserts that all CSS files in `src/css/` are referenced via `<link rel="stylesheet">` in `index.html` in correct cascade order, and that obsolete `styles.css` is not referenced.
