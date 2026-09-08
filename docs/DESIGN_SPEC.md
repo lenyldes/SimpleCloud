@@ -7,7 +7,7 @@
 
 ## 🎨 Design System & CSS Custom Properties
 
-All styling in `services/web-frontend/src/styles.css` must use these core CSS custom properties defined on `:root`:
+All styling across `services/web-frontend/src/css/` must use these core CSS custom properties defined on `:root` in `base.css`:
 
 ```css
 :root {
@@ -127,9 +127,25 @@ The application layout consists of 3 main regions:
 
 ---
 
+## 📦 Modular CSS Architecture
+
+The web frontend uses a zero-build modular CSS structure located in `services/web-frontend/src/css/`. Stylesheets are loaded concurrently via parallel `<link rel="stylesheet">` elements in `services/web-frontend/src/index.html` in strict cascade order:
+
+1. **`css/base.css?v=1.2.0`**: `@font-face` (Inter), `:root` design tokens, global `*` reset, `body`, `.visually-hidden`, `.hidden`.
+2. **`css/layout.css?v=1.2.0`**: `#app`, `#app-header`, `.brand-*`, `.search-*`, `#search-input`, `.header-actions`, `.app-body`, `#app-sidebar`, `.nav-*`, `.main-content`, `.toolbar-*`, `#breadcrumbs-bar`, `.sort-select`, `.view-toggle`.
+3. **`css/components.css?v=1.2.0`**: `.btn*`, `.user-profile*`, `.avatar`, `.profile-dropdown*`, `#quota-container*`, `#workspace`, `.file-grid`, `.grid-card*`, `.file-list*`, `.empty-state*`, `#toast-container`, `.toast*`.
+4. **`css/modals.css?v=1.2.0`**: `#dropzone-overlay*`, `.modal-backdrop`, `.modal-dialog`, `.modal-header/body/footer`, `#modal-auth*`, `.lightbox-*`, `.code-pre`, `.video-player`, `.form-*`.
+
+### Modular Boundaries & Size Constraints
+- **Agent Token Safety Threshold**: Every CSS module must remain **<= 450 lines** to fit within AI agent view windows and avoid context truncation.
+- **In-Place Navigation Guide**: `services/web-frontend/src/css/README.md` serves as the authoritative Component-to-File lookup cheat sheet for agents and developers.
+- **Strict Cascade**: Never reorder `<link>` tags in `index.html` to prevent specificity and cascade regressions.
+
+---
+
 ## 🛠️ Implementation Rules for Code Agents
 
 When `[CODE-AGENT]` builds the `services/web-frontend` package:
-1. Put all CSS rules in `services/web-frontend/src/styles.css` using the `:root` design tokens.
+1. Organize all CSS rules into modular stylesheets under `services/web-frontend/src/css/` (`base.css`, `layout.css`, `components.css`, `modals.css`), keeping each module strictly <= 450 lines and referencing `services/web-frontend/src/css/README.md` for lookup.
 2. Do NOT import third-party CSS libraries (Bootstrap, Tailwind, etc.) — strictly Vanilla CSS adhering to `docs/DESIGN_SPEC.md`.
 3. Use SVG icons for folders, file types, and buttons matching the blue Mail.ru Cloud color palette.
