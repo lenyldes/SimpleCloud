@@ -29,32 +29,37 @@ func findRepoRoot(t *testing.T) string {
 	}
 }
 
-// readAllFrontendCSS reads CSS content from services/web-frontend/src/styles.css if present,
-// or combines all .css files in services/web-frontend/src/css/ if modularized.
-func readAllFrontendCSS(t *testing.T) string {
+// readAllFrontendFiles reads content from legacy file if present, or combines all matching files in subDir.
+func readAllFrontendFiles(t *testing.T, subDir, globPattern, legacyFile string) string {
 	t.Helper()
-	repoRoot := findRepoRoot(t)
-	srcDir := filepath.Join(repoRoot, "services", "web-frontend", "src")
-	legacyCSS := filepath.Join(srcDir, "styles.css")
-	if b, err := os.ReadFile(legacyCSS); err == nil {
+	srcDir := filepath.Join(findRepoRoot(t), "services", "web-frontend", "src")
+	if b, err := os.ReadFile(filepath.Join(srcDir, legacyFile)); err == nil {
 		return string(b)
 	}
-
-	cssDir := filepath.Join(srcDir, "css")
-	files, err := filepath.Glob(filepath.Join(cssDir, "*.css"))
+	files, err := filepath.Glob(filepath.Join(srcDir, subDir, globPattern))
 	if err != nil || len(files) == 0 {
-		t.Fatalf("no CSS files found in %s or %s", legacyCSS, cssDir)
+		t.Fatalf("no files found in %s/%s", subDir, globPattern)
 	}
 	var sb strings.Builder
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
-			t.Fatalf("failed to read CSS file %s: %v", f, err)
+			t.Fatalf("failed to read file %s: %v", f, err)
 		}
 		sb.Write(b)
 		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+func readAllFrontendCSS(t *testing.T) string {
+	t.Helper()
+	return readAllFrontendFiles(t, "css", "*.css", "styles.css")
+}
+
+func readAllFrontendJS(t *testing.T) string {
+	t.Helper()
+	return readAllFrontendFiles(t, "js", "*.js", "app.js")
 }
 
 func TestWebFrontendStaticAssetsExistence(t *testing.T) {
@@ -63,9 +68,17 @@ func TestWebFrontendStaticAssetsExistence(t *testing.T) {
 
 	requiredFiles := []string{
 		filepath.Join(webFrontendDir, "src", "index.html"),
-		filepath.Join(webFrontendDir, "src", "app.js"),
 		filepath.Join(webFrontendDir, "nginx.conf"),
 		filepath.Join(webFrontendDir, "Dockerfile"),
+	}
+
+	jsDir := filepath.Join(webFrontendDir, "src", "js")
+	if info, err := os.Stat(jsDir); err == nil && info.IsDir() {
+		for _, mod := range []string{"api.js", "auth.js", "ui.js", "modals.js", "app.js"} {
+			requiredFiles = append(requiredFiles, filepath.Join(jsDir, mod))
+		}
+	} else {
+		requiredFiles = append(requiredFiles, filepath.Join(webFrontendDir, "src", "app.js"))
 	}
 
 	cssDir := filepath.Join(webFrontendDir, "src", "css")
@@ -80,17 +93,11 @@ func TestWebFrontendStaticAssetsExistence(t *testing.T) {
 	for _, filePath := range requiredFiles {
 		t.Run(filepath.Base(filePath), func(t *testing.T) {
 			info, err := os.Stat(filePath)
-			if os.IsNotExist(err) {
-				t.Fatalf("expected required static asset/config file at %s, but file does not exist", filePath)
-			}
 			if err != nil {
-				t.Fatalf("error checking file status %s: %v", filePath, err)
+				t.Fatalf("expected required static asset at %s: %v", filePath, err)
 			}
-			if info.IsDir() {
-				t.Fatalf("expected %s to be a file, but it is a directory", filePath)
-			}
-			if info.Size() == 0 {
-				t.Fatalf("expected file %s to have non-zero content, but it is empty", filePath)
+			if info.IsDir() || info.Size() == 0 {
+				t.Fatalf("expected non-empty file at %s", filePath)
 			}
 		})
 	}
@@ -156,14 +163,7 @@ func TestWebFrontendCSSTokens(t *testing.T) {
 }
 
 func TestWebFrontendJavaScriptAPIEndpoints(t *testing.T) {
-	repoRoot := findRepoRoot(t)
-	jsPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "app.js")
-
-	contentBytes, err := os.ReadFile(jsPath)
-	if err != nil {
-		t.Fatalf("failed to read app.js: %v", err)
-	}
-	content := string(contentBytes)
+	content := readAllFrontendJS(t)
 
 	requiredEndpoints := []string{
 		"/api/v1/files",
@@ -223,7 +223,20 @@ func TestWebFrontendStaticDeliveryHTTP(t *testing.T) {
 	}{
 		{"/", http.StatusOK},
 		{"/index.html", http.StatusOK},
-		{"/app.js", http.StatusOK},
+	}
+	if _, err := os.Stat(filepath.Join(srcDir, "app.js")); err == nil {
+		tests = append(tests, struct {
+			path         string
+			expectedCode int
+		}{"/app.js", http.StatusOK})
+	}
+	if _, err := os.Stat(filepath.Join(srcDir, "js", "app.js")); err == nil {
+		for _, mod := range []string{"api.js", "auth.js", "ui.js", "modals.js", "app.js"} {
+			tests = append(tests, struct {
+				path         string
+				expectedCode int
+			}{"/js/" + mod, http.StatusOK})
+		}
 	}
 
 	if _, err := os.Stat(filepath.Join(srcDir, "styles.css")); err == nil {
@@ -299,21 +312,10 @@ func TestWebFrontendProfileDropdownAndLogout(t *testing.T) {
 	})
 
 	t.Run("Logout JavaScript API and handler exist", func(t *testing.T) {
-		jsPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "app.js")
-		contentBytes, err := os.ReadFile(jsPath)
-		if err != nil {
-			t.Fatalf("failed to read app.js: %v", err)
-		}
-		content := string(contentBytes)
-
-		requiredTokens := []string{
-			"/api/v1/auth/logout",
-			"handleLogout",
-		}
-
-		for _, token := range requiredTokens {
+		content := readAllFrontendJS(t)
+		for _, token := range []string{"/api/v1/auth/logout", "handleLogout"} {
 			if !strings.Contains(content, token) {
-				t.Errorf("app.js missing required logout reference %q", token)
+				t.Errorf("JavaScript modules missing required logout reference %q", token)
 			}
 		}
 	})
@@ -323,7 +325,10 @@ func TestWebFrontendFileUploadButtonAndInput(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 
 	t.Run("app.js snapshots file input using Array.from before clearing value", func(t *testing.T) {
-		jsPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "app.js")
+		jsPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "js", "app.js")
+		if _, err := os.Stat(jsPath); os.IsNotExist(err) {
+			jsPath = filepath.Join(repoRoot, "services", "web-frontend", "src", "app.js")
+		}
 		contentBytes, err := os.ReadFile(jsPath)
 		if err != nil {
 			t.Fatalf("failed to read app.js: %v", err)

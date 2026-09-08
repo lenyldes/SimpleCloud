@@ -86,14 +86,7 @@ func TestWebFrontendAuthModalStyles(t *testing.T) {
 }
 
 func TestWebFrontendAuthInterceptorsJS(t *testing.T) {
-	repoRoot := findRepoRoot(t)
-	jsPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "app.js")
-
-	contentBytes, err := os.ReadFile(jsPath)
-	if err != nil {
-		t.Fatalf("failed to read app.js: %v", err)
-	}
-	content := string(contentBytes)
+	content := readAllFrontendJS(t)
 
 	requiredLogicTokens := []struct {
 		name  string
@@ -107,7 +100,7 @@ func TestWebFrontendAuthInterceptorsJS(t *testing.T) {
 	for _, elem := range requiredLogicTokens {
 		t.Run(elem.name, func(t *testing.T) {
 			if !strings.Contains(content, elem.token) {
-				t.Errorf("app.js missing required frontend logic %s (expected token %q)", elem.name, elem.token)
+				t.Errorf("JavaScript modules missing required frontend logic %s (expected token %q)", elem.name, elem.token)
 			}
 		})
 	}

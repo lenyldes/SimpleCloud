@@ -98,7 +98,7 @@ func countFileLines(path string) (int, error) {
 func collectRepoFiles(t *testing.T, root string) []string {
 	t.Helper()
 
-	cmd := exec.Command("git", "ls-files")
+	cmd := exec.Command("git", "ls-files", "--cached", "--others", "--exclude-standard")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err == nil {
@@ -107,7 +107,10 @@ func collectRepoFiles(t *testing.T, root string) []string {
 		for scanner.Scan() {
 			rel := strings.TrimSpace(scanner.Text())
 			if rel != "" {
-				files = append(files, filepath.Join(root, rel))
+				full := filepath.Join(root, rel)
+				if _, statErr := os.Stat(full); statErr == nil {
+					files = append(files, full)
+				}
 			}
 		}
 		if len(files) > 0 {

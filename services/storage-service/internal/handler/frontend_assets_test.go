@@ -219,27 +219,23 @@ func TestFrontendHTMLStylesheetLinkIntegrity(t *testing.T) {
 	})
 }
 
-// TestFrontendDynamicCSSClassParity asserts that all CSS classes dynamically used in index.html and app.js
+// TestFrontendDynamicCSSClassParity asserts that all CSS classes dynamically used in index.html and JS modules
 // are defined within the modular stylesheets under services/web-frontend/src/css/*.css.
 func TestFrontendDynamicCSSClassParity(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	srcDir := filepath.Join(repoRoot, "services", "web-frontend", "src")
 	indexPath := filepath.Join(srcDir, "index.html")
-	appJsPath := filepath.Join(srcDir, "app.js")
 	cssDir := filepath.Join(srcDir, "css")
 
 	htmlBytes, err := os.ReadFile(indexPath)
 	if err != nil {
 		t.Fatalf("failed to read index.html: %v", err)
 	}
-	jsBytes, err := os.ReadFile(appJsPath)
-	if err != nil {
-		t.Fatalf("failed to read app.js: %v", err)
-	}
+	jsContent := readAllFrontendJS(t)
 
-	usedClasses := extractReferencedCSSClasses(t, string(htmlBytes), string(jsBytes))
+	usedClasses := extractReferencedCSSClasses(t, string(htmlBytes), jsContent)
 	if len(usedClasses) == 0 {
-		t.Fatal("expected non-empty list of used CSS classes extracted from index.html and app.js")
+		t.Fatal("expected non-empty list of used CSS classes extracted from index.html and JS modules")
 	}
 
 	cssFiles, err := filepath.Glob(filepath.Join(cssDir, "*.css"))
