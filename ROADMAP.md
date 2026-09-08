@@ -59,6 +59,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
     - [x] BUG-1: Web UI Profile Menu & Logout button (`fix-logout-button`).
     - [x] BUG-2: Upload button not triggering file upload (`fix-upload-button`).
     - [x] BUG-3: Drag-and-drop storage directory permission denied (`mkdir /storage/...: permission denied`) (`fix-storage-permissions`).
+    - [ ] BUG-6: Web UI File and Folder Delete Controls (`fix-ui-delete-controls-bug-6`).
   - [ ] Final v1.0 Release Verification: End-to-end audit and release build ready for production use.
 
 - [ ] **Phase 8: Future Extensions & Rich Media Features**
