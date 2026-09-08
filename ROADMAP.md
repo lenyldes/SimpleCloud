@@ -52,6 +52,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Web UI Profile Menu & Logout Mechanism (Part 5 of Phase 7): fixed BUG-1 (session termination & profile dropdown) in `fix-logout-button`.
   - [x] Web UI Upload Button & Accessible Controls (Part 6 of Phase 7): fixed BUG-2 (file upload input snapshot & accessible button) in `fix-upload-button`.
   - [x] Storage Volume Permissions & CI/CD Error-Handling Hardening (Part 7 of Phase 7): fixed BUG-3 (storage volume permissions, su-exec privilege dropping, and CI/CD set -e) in `fix-storage-permissions`.
+  - [x] Modular CSS Decomposition & Architecture Guard (Part 8 of Phase 7): decomposed monolithic `styles.css` into `base.css`, `layout.css`, `components.css`, `modals.css`, added continuous CI parity linter, and in-place navigation guide in `refactor-modular-css`.
   - [x] Guided User Manual Testing Protocol: `[ORCHESTRATOR-AGENT]` provides interactive step-by-step test instructions and report template for user feedback (`BUGS.md`).
   - [ ] User Bug Triage & Resolution: Implement targeted fixes for all user-reported UI/UX issues and edge cases (`BUGS.md`).
     - [x] BUG-1: Web UI Profile Menu & Logout button (`fix-logout-button`).
@@ -68,5 +69,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] `internal/database` statement coverage to 85%+ (O2): inject `fs.FS` into `RunMigrations` instead of package-level `embed.FS` and test error/rollback branches (`phase7-final-cleanup`).
   - [x] Google Fonts `<link>` in `index.html` blocked by CSP `style-src 'self'`: self-host Inter typography font assets (`phase7-final-cleanup`).
   - [x] L5: `Content-Disposition` with RFC 5987 `filename*` for UTF-8 filenames (`phase7-final-cleanup`).
+  - [x] Modular CSS decomposition & frontend stylesheet architecture (< 450 lines per module, continuous CI selector parity linter, in-place index in `src/css/README.md`) (`refactor-modular-css`).
+
 
 
