@@ -1,12 +1,11 @@
 ## 1. Automated Parity & Structure Tests (Test Agent)
 
-- [ ] 1.1 Create automated CSS parity and modularity test (`services/storage-service/internal/handler/css_parity_test.go` or a test verification suite) that checks:
-  - `services/web-frontend/src/css/` directory exists and contains `base.css`, `layout.css`, `components.css`, and `modals.css`.
-  - Each modular CSS file is within the target threshold (<= 450 lines).
-  - All 73 CSS classes and 10 IDs from the original monolithic stylesheet are preserved without omission.
-  - `index.html` links all 4 modular stylesheets in cascade order (`base.css` -> `layout.css` -> `components.css` -> `modals.css`) and no longer references `styles.css`.
-  - `services/web-frontend/src/css/README.md` exists and contains the component-to-file lookup table.
-  - Verify test fails in RED state prior to implementation.
+- [ ] 1.1 Create permanent dynamic frontend integrity test (`services/storage-service/internal/handler/frontend_assets_test.go`) that acts as a continuous CI linter:
+  - **Dynamic Class Presence**: Parses `index.html` and `app.js` to extract all referenced CSS classes, and asserts that 100% of these classes are defined in `services/web-frontend/src/css/*.css` (dynamic validation that scales automatically as new features/classes are added).
+  - **File Modularity & Size Guard**: Asserts that `services/web-frontend/src/css/` contains `base.css`, `layout.css`, `components.css`, `modals.css`, and that no CSS module exceeds the 450-line agent limit.
+  - **Link Integrity**: Asserts that all CSS files in `src/css/` are referenced via `<link rel="stylesheet">` in `index.html` in correct cascade order, and that obsolete `styles.css` is not referenced.
+  - **Documentation Presence**: Asserts that `services/web-frontend/src/css/README.md` exists and contains the component lookup table.
+  - Verify test executes and fails in RED state prior to implementation.
 
 ## 2. Modular CSS Decomposition & Markup Updates (Code Agent)
 
