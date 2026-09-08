@@ -333,6 +333,12 @@ async function handleConfirmDelete() {
 
   const { id, type, name } = item;
   const isFolder = type === 'folder';
+  const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+
+  if (confirmDeleteBtn) {
+    confirmDeleteBtn.disabled = true;
+    confirmDeleteBtn.textContent = 'Deleting...';
+  }
 
   try {
     const res = isFolder
@@ -350,6 +356,11 @@ async function handleConfirmDelete() {
   } catch (err) {
     console.error('Delete error:', err);
     showToast(`Failed to delete ${isFolder ? 'folder' : 'file'}`, 'danger');
+  } finally {
+    if (confirmDeleteBtn) {
+      confirmDeleteBtn.disabled = false;
+      confirmDeleteBtn.textContent = 'Delete';
+    }
   }
 }
 
