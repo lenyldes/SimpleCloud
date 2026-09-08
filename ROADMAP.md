@@ -53,7 +53,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Web UI Upload Button & Accessible Controls (Part 6 of Phase 7): fixed BUG-2 (file upload input snapshot & accessible button) in `fix-upload-button`.
   - [x] Storage Volume Permissions & CI/CD Error-Handling Hardening (Part 7 of Phase 7): fixed BUG-3 (storage volume permissions, su-exec privilege dropping, and CI/CD set -e) in `fix-storage-permissions`.
   - [x] Modular CSS Decomposition & Architecture Guard (Part 8 of Phase 7): decomposed monolithic `styles.css` into `base.css`, `layout.css`, `components.css`, `modals.css`, added continuous CI parity linter, and in-place navigation guide in `refactor-modular-css`.
-  - [ ] Universal File Line Limit & Architecture Guard (Part 9 of Phase 7): enforce universal <= 450 lines limit on all readable text files via automated Go architecture test in CI/CD, and decompose 5 violating files (`file.go`, `file_test.go`, `folder_test.go`, `auth/handler_test.go`, `app.js`) in `refactor-max-file-lines-limit`.
+  - [x] Universal File Line Limit & Architecture Guard (Part 9 of Phase 7): enforce universal <= 450 lines limit on all readable text files via automated Go architecture test in CI/CD, and decompose 5 violating files (`file.go`, `file_test.go`, `folder_test.go`, `auth/handler_test.go`, `app.js`) in `refactor-max-file-lines-limit`.
   - [x] Guided User Manual Testing Protocol: `[ORCHESTRATOR-AGENT]` provides interactive step-by-step test instructions and report template for user feedback (`BUGS.md`).
   - [ ] User Bug Triage & Resolution: Implement targeted fixes for all user-reported UI/UX issues and edge cases (`BUGS.md`).
     - [x] BUG-1: Web UI Profile Menu & Logout button (`fix-logout-button`).
@@ -71,6 +71,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Google Fonts `<link>` in `index.html` blocked by CSP `style-src 'self'`: self-host Inter typography font assets (`phase7-final-cleanup`).
   - [x] L5: `Content-Disposition` with RFC 5987 `filename*` for UTF-8 filenames (`phase7-final-cleanup`).
   - [x] Modular CSS decomposition & frontend stylesheet architecture (< 450 lines per module, continuous CI selector parity linter, in-place index in `src/css/README.md`) (`refactor-modular-css`).
+  - [x] Universal <= 450 lines file limit principle & architecture guard (`TestMaxFileLineCount`, decomposition of backend handlers, test suites, and frontend JS modules) (`refactor-max-file-lines-limit`).
 
 
 
