@@ -121,7 +121,7 @@ func TestWebNav_ReactiveNavigationWorkspaceReload(t *testing.T) {
 			t.Fatalf("ui.js missing navigateToFolder function")
 		}
 
-		if !strings.Contains(body, "location.hash") && !strings.Contains(body, "#/folder/") {
+		if !strings.Contains(body, "location.hash") || !strings.Contains(body, "#/folder/") {
 			t.Errorf("navigateToFolder must update URL hash with #/folder/: got body:\n%s", body)
 		}
 		if strings.Contains(body, "loadWorkspaceData") {
@@ -179,10 +179,11 @@ func TestWebNav_ClientURLHashRouter(t *testing.T) {
 	})
 
 	t.Run("app.js parses #/folder/<id> route", func(t *testing.T) {
+		routeRegex := regexp.MustCompile(`(?:match\([^)]*#\\/folder\/|#\\/folder\/)`)
 		hasHashParse := strings.Contains(appJS, "#/folder/") ||
-			strings.Contains(appJS, `match(/#\/folder\/([a-zA-Z0-9\-]+)/)`) ||
-			strings.Contains(appJS, "parseHash") ||
-			strings.Contains(appJS, "handleRoute")
+			strings.Contains(appJS, "#\\/folder\\/") ||
+			routeRegex.MatchString(appJS) ||
+			strings.Contains(appJS, "parseHash")
 		if !hasHashParse {
 			t.Errorf("app.js missing URL-hash parser for #/folder/<id> pattern")
 		}

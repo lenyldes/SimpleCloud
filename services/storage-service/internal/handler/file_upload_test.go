@@ -342,3 +342,38 @@ func TestFileHandler_UploadHandler_BranchCoverage(t *testing.T) {
 		}
 	})
 }
+
+func TestFileUpload_IDOR_CrossUserFolderIsolation(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userA := createTestUser(t, pool, 10*1024*1024)
+	userB := createTestUser(t, pool, 10*1024*1024)
+	folderB := createTestFolder(t, pool, userB)
+
+	content := []byte("idor exploit payload")
+	rr := uploadTestFile(t, fh, userA, "idor_attack.txt", content, folderB.String())
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found when User A uploads to User B's folder (IDOR), got %d, body: %s", rr.Code, rr.Body.String())
+	}
+
+	// Verify no file record was created in database for either user
+	if got := countUserFiles(t, pool, userA); got != 0 {
+		t.Errorf("expected 0 files for User A after rejected upload, got %d", got)
+	}
+	if got := countUserFiles(t, pool, userB); got != 0 {
+		t.Errorf("expected 0 files for User B after rejected upload, got %d", got)
+	}
+
+	// Verify User A used_bytes quota was not charged
+	if got := getUserUsedBytes(t, pool, userA); got != 0 {
+		t.Errorf("expected used_bytes 0 for User A, got %d", got)
+	}
+
+	// Verify no binary shard was leaked to disk
+	if got := countRegularFiles(t, tempDir); got != 0 {
+		t.Errorf("expected no binary shards on disk after rejected IDOR upload, got %d", got)
+	}
+}
