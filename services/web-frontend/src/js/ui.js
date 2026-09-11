@@ -156,9 +156,22 @@ function updateQuotaDisplay() {
 function renderBreadcrumbs() {
   const breadcrumbsBar = document.getElementById('breadcrumbs-bar');
   if (!breadcrumbsBar) return;
+
+  const crumbs = [{ id: null, name: 'All Files' }];
+  if (state.currentFolderId && Array.isArray(state.allFolders)) {
+    const chain = [];
+    let curr = state.allFolders.find(f => f.id === state.currentFolderId);
+    while (curr) {
+      chain.unshift({ id: curr.id, name: curr.name || curr.filename });
+      curr = curr.parent_id ? state.allFolders.find(f => f.id === curr.parent_id) : null;
+    }
+    crumbs.push(...chain);
+  }
+  state.breadcrumbs = crumbs;
+
   let html = '';
-  state.breadcrumbs.forEach((crumb, idx) => {
-    const isLast = idx === state.breadcrumbs.length - 1;
+  crumbs.forEach((crumb, idx) => {
+    const isLast = idx === crumbs.length - 1;
     if (idx > 0) {
       html += `<span class="breadcrumb-separator">/</span>`;
     }
@@ -178,21 +191,16 @@ function renderBreadcrumbs() {
   });
 }
 
-function navigateToBreadcrumb(folderId) {
-  const targetIdx = state.breadcrumbs.findIndex(b => b.id === folderId);
-  if (targetIdx !== -1) {
-    state.breadcrumbs = state.breadcrumbs.slice(0, targetIdx + 1);
-    state.currentFolderId = folderId;
-    renderBreadcrumbs();
-    renderWorkspace();
-  }
+async function navigateToBreadcrumb(folderId) {
+  state.currentFolderId = folderId;
+  window.location.hash = folderId ? `#/folder/${folderId}` : '#/';
+  await loadWorkspaceData();
 }
 
-function navigateToFolder(folder) {
+async function navigateToFolder(folder) {
   state.currentFolderId = folder.id;
-  state.breadcrumbs.push({ id: folder.id, name: folder.name || folder.filename });
-  renderBreadcrumbs();
-  renderWorkspace();
+  window.location.hash = `#/folder/${folder.id}`;
+  await loadWorkspaceData();
 }
 
 /**

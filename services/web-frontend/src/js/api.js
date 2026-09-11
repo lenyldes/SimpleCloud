@@ -85,11 +85,21 @@ async function apiDeleteFile(fileId) {
 }
 
 /**
- * List all folders for the authenticated user.
+ * List folders for the authenticated user.
+ * @param {string|null} [parentId=null]
  * @returns {Promise<Response>}
  */
-async function apiListFolders() {
-  return fetchWithAuth('/api/v1/folders');
+async function apiListFolders(parentId = null) {
+  const url = parentId ? `/api/v1/folders?parent_id=${encodeURIComponent(parentId)}` : '/api/v1/folders';
+  return fetchWithAuth(url);
+}
+
+/**
+ * List all folders for the authenticated user across all levels.
+ * @returns {Promise<Response>}
+ */
+async function apiListAllFolders() {
+  return fetchWithAuth('/api/v1/folders?all=true');
 }
 
 /**
@@ -130,6 +140,7 @@ window.api = {
   uploadFile: apiUploadFile,
   deleteFile: apiDeleteFile,
   listFolders: apiListFolders,
+  listAllFolders: apiListAllFolders,
   createFolder: apiCreateFolder,
   deleteFolder: apiDeleteFolder
 };

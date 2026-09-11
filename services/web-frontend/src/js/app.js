@@ -6,6 +6,7 @@ var state = window.state || {
   breadcrumbs: [{ id: null, name: 'All Files' }],
   files: [],
   folders: [],
+  allFolders: [],
   viewMode: 'grid', // 'grid' | 'list'
   sortBy: 'name',   // 'name' | 'size' | 'date'
   sortOrder: 'asc',
@@ -18,6 +19,8 @@ var state = window.state || {
 };
 window.state = state;
 
+let activeRouteFolderId = Symbol('initial');
+
 /**
  * Bootstrap and initialize application components.
  */
@@ -25,7 +28,7 @@ async function init() {
   closeProfileDropdown();
   setupEventListeners();
   await checkAuth();
-  await loadWorkspaceData();
+  await handleRoute();
 }
 
 document.addEventListener('DOMContentLoaded', init);
@@ -35,6 +38,7 @@ document.addEventListener('DOMContentLoaded', init);
  */
 async function loadWorkspaceData() {
   await checkAuth();
+  activeRouteFolderId = state.currentFolderId;
   await Promise.all([loadFiles(), loadFolders()]);
   updateQuotaDisplay();
   renderBreadcrumbs();
@@ -63,16 +67,61 @@ async function loadFiles() {
  */
 async function loadFolders() {
   try {
-    const res = window.api && window.api.listFolders
-      ? await window.api.listFolders()
-      : await fetchWithAuth('/api/v1/folders');
-    if (res.ok) {
-      const data = await res.json();
+    const [childRes, allRes] = await Promise.all([
+      window.api && window.api.listFolders
+        ? window.api.listFolders(state.currentFolderId)
+        : fetchWithAuth(state.currentFolderId ? `/api/v1/folders?parent_id=${encodeURIComponent(state.currentFolderId)}` : '/api/v1/folders'),
+      window.api && window.api.listAllFolders
+        ? window.api.listAllFolders()
+        : fetchWithAuth('/api/v1/folders?all=true')
+    ]);
+    if (allRes && allRes.ok) {
+      const allData = await allRes.json();
+      state.allFolders = Array.isArray(allData) ? allData : [];
+    }
+    if (childRes && childRes.ok) {
+      const data = await childRes.json();
       state.folders = Array.isArray(data) ? data : [];
     }
   } catch (err) {
     console.error('Error loading folders:', err);
   }
+}
+
+/**
+ * Handle URL hash routing and synchronize workspace folder state.
+ */
+async function handleRoute() {
+  const hash = window.location.hash || '';
+  const match = hash.match(/^#\/folder\/([a-zA-Z0-9-]+)$/);
+  const targetFolderId = match ? match[1] : null;
+
+  if (targetFolderId) {
+    if (!state.allFolders || state.allFolders.length === 0) {
+      const res = window.api && window.api.listAllFolders
+        ? await window.api.listAllFolders()
+        : await fetchWithAuth('/api/v1/folders?all=true');
+      if (res && res.ok) {
+        state.allFolders = await res.json();
+      }
+    }
+    const exists = Array.isArray(state.allFolders) && state.allFolders.some(f => f.id === targetFolderId);
+    if (!exists) {
+      showToast('Folder not found or access denied', 'danger');
+      state.currentFolderId = null;
+      activeRouteFolderId = null;
+      window.location.hash = '#/';
+      await loadWorkspaceData();
+      return;
+    }
+  }
+
+  if (activeRouteFolderId === targetFolderId && state.currentFolderId === targetFolderId) {
+    return;
+  }
+  activeRouteFolderId = targetFolderId;
+  state.currentFolderId = targetFolderId;
+  await loadWorkspaceData();
 }
 
 /**
@@ -150,6 +199,16 @@ function setupDragAndDrop() {
       dropzoneOverlay.classList.add('hidden');
     }
 
+    if (e.dataTransfer && e.dataTransfer.items) {
+      for (const item of e.dataTransfer.items) {
+        const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+        if (entry && entry.isDirectory) {
+          showToast('Загрузка папок не поддерживается. Пожалуйста, создайте папку и загрузите файлы внутрь', 'danger');
+          return;
+        }
+      }
+    }
+
     if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       await handleFileUpload(e.dataTransfer.files);
     }
@@ -161,6 +220,7 @@ function setupDragAndDrop() {
  */
 function setupEventListeners() {
   setupDragAndDrop();
+  window.addEventListener('hashchange', handleRoute);
 
   // Cached DOM elements
   const searchInput = document.getElementById('search-input');

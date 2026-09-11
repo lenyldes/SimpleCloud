@@ -157,13 +157,19 @@ func (fh *FolderHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	allParam := r.URL.Query().Get("all") == "true"
 	hasParentID := r.URL.Query().Has("parent_id")
 	targetParentID := r.URL.Query().Get("parent_id")
 
 	var rows pgx.Rows
 	var err error
 
-	if !hasParentID || targetParentID == "" {
+	if allParam {
+		rows, err = fh.pool.Query(r.Context(),
+			`SELECT id, user_id, parent_id, name, created_at FROM folders WHERE user_id = $1 ORDER BY created_at ASC`,
+			userID,
+		)
+	} else if !hasParentID || targetParentID == "" {
 		rows, err = fh.pool.Query(r.Context(),
 			`SELECT id, user_id, parent_id, name, created_at FROM folders WHERE user_id = $1 AND parent_id IS NULL ORDER BY created_at ASC`,
 			userID,

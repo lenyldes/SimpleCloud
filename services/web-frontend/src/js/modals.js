@@ -153,6 +153,9 @@ async function handleCreateFolder(folderName) {
       if (Array.isArray(state.folders)) {
         state.folders.push(newFolder);
       }
+      if (Array.isArray(state.allFolders)) {
+        state.allFolders.push(newFolder);
+      }
       closeModal(modalNewFolder);
       if (folderNameInput) folderNameInput.value = '';
       if (typeof showToast === 'function') showToast(`Folder "${folderName}" created`, 'success');
