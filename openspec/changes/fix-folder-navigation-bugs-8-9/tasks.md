@@ -2,9 +2,9 @@
 
 ## 1. Automated Tests (RED State)
 
-- [ ] 1.1 Add backend unit/integration tests in `folder_hierarchy_test.go` verifying `GET /api/v1/folders?all=true` returns all user folders and excludes other users' folders
-- [ ] 1.2 Add frontend JavaScript integration tests in `web_nav_test.go` verifying that `apiListFolders` passes `parent_id`, `loadFolders` propagates active folder ID, and `navigateToFolder` / `navigateToBreadcrumb` trigger network re-fetching
-- [ ] 1.3 Add frontend tests in `web_nav_test.go` verifying URL-hash parsing (`#/folder/<id>`), F5 recovery, safe redirect to root on foreign or invalid UUIDs, and folder drop validation in `setupDragAndDrop`
+- [x] 1.1 Add backend unit/integration tests in `folder_hierarchy_test.go` verifying `GET /api/v1/folders?all=true` returns all user folders and excludes other users' folders
+- [x] 1.2 Add frontend JavaScript integration tests in `web_nav_test.go` verifying that `apiListFolders` passes `parent_id`, `loadFolders` propagates active folder ID, and `navigateToFolder` / `navigateToBreadcrumb` trigger network re-fetching
+- [x] 1.3 Add frontend tests in `web_nav_test.go` verifying URL-hash parsing (`#/folder/<id>`), F5 recovery, safe redirect to root on foreign or invalid UUIDs, and folder drop validation in `setupDragAndDrop`
 
 ## 2. Backend Folder Listing Enhancement
 
