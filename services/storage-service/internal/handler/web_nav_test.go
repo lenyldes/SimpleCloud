@@ -69,8 +69,13 @@ func TestWebNav_ApiListFoldersParameterPropagation(t *testing.T) {
 	})
 
 	t.Run("window.api exports listAllFolders", func(t *testing.T) {
-		if !strings.Contains(apiJS, "listAllFolders") {
-			t.Errorf("api.js missing listAllFolders export in window.api object")
+		apiObjPattern := regexp.MustCompile(`window\.api\s*=\s*\{([^}]+)\}`)
+		matches := apiObjPattern.FindStringSubmatch(apiJS)
+		if len(matches) < 2 {
+			t.Fatalf("api.js missing window.api object definition")
+		}
+		if !strings.Contains(matches[1], "listAllFolders") {
+			t.Errorf("window.api object does not export listAllFolders: got block:\n%s", matches[1])
 		}
 	})
 }
@@ -110,7 +115,7 @@ func TestWebNav_LoadFoldersActiveFolderAndHierarchy(t *testing.T) {
 func TestWebNav_ReactiveNavigationWorkspaceReload(t *testing.T) {
 	uiJS := readJS(t, "ui.js")
 
-	t.Run("navigateToFolder updates URL hash to folder route", func(t *testing.T) {
+	t.Run("navigateToFolder updates URL hash without direct loadWorkspaceData call", func(t *testing.T) {
 		body := extractFunctionBody(uiJS, "navigateToFolder")
 		if body == "" {
 			t.Fatalf("ui.js missing navigateToFolder function")
@@ -119,38 +124,22 @@ func TestWebNav_ReactiveNavigationWorkspaceReload(t *testing.T) {
 		if !strings.Contains(body, "location.hash") && !strings.Contains(body, "#/folder/") {
 			t.Errorf("navigateToFolder must update URL hash with #/folder/: got body:\n%s", body)
 		}
-	})
-
-	t.Run("navigateToFolder calls loadWorkspaceData for clean server re-fetch", func(t *testing.T) {
-		body := extractFunctionBody(uiJS, "navigateToFolder")
-		if body == "" {
-			t.Fatalf("ui.js missing navigateToFolder function")
-		}
-
-		if !strings.Contains(body, "loadWorkspaceData") {
-			t.Errorf("navigateToFolder must invoke loadWorkspaceData to reload workspace from server: got body:\n%s", body)
+		if strings.Contains(body, "loadWorkspaceData") {
+			t.Errorf("navigateToFolder must delegate workspace reload to handleRoute and not call loadWorkspaceData directly: got body:\n%s", body)
 		}
 	})
 
-	t.Run("navigateToBreadcrumb updates URL hash", func(t *testing.T) {
+	t.Run("navigateToBreadcrumb updates URL hash without direct loadWorkspaceData call", func(t *testing.T) {
 		body := extractFunctionBody(uiJS, "navigateToBreadcrumb")
 		if body == "" {
 			t.Fatalf("ui.js missing navigateToBreadcrumb function")
 		}
 
-		if !strings.Contains(body, "location.hash") && !strings.Contains(body, "#/folder/") {
+		if !strings.Contains(body, "location.hash") {
 			t.Errorf("navigateToBreadcrumb must update URL hash on breadcrumb navigation: got body:\n%s", body)
 		}
-	})
-
-	t.Run("navigateToBreadcrumb calls loadWorkspaceData", func(t *testing.T) {
-		body := extractFunctionBody(uiJS, "navigateToBreadcrumb")
-		if body == "" {
-			t.Fatalf("ui.js missing navigateToBreadcrumb function")
-		}
-
-		if !strings.Contains(body, "loadWorkspaceData") {
-			t.Errorf("navigateToBreadcrumb must invoke loadWorkspaceData to refresh ancestor items: got body:\n%s", body)
+		if strings.Contains(body, "loadWorkspaceData") {
+			t.Errorf("navigateToBreadcrumb must delegate workspace reload to handleRoute and not call loadWorkspaceData directly: got body:\n%s", body)
 		}
 	})
 
@@ -162,6 +151,20 @@ func TestWebNav_ReactiveNavigationWorkspaceReload(t *testing.T) {
 
 		if !strings.Contains(body, "allFolders") && !strings.Contains(uiJS, "buildBreadcrumbChain") {
 			t.Errorf("renderBreadcrumbs must resolve ancestor chain using state.allFolders: got body:\n%s", body)
+		}
+	})
+
+	t.Run("renderBreadcrumbs guards against cyclical folder references", func(t *testing.T) {
+		body := extractFunctionBody(uiJS, "renderBreadcrumbs")
+		if body == "" {
+			t.Fatalf("ui.js missing renderBreadcrumbs function")
+		}
+
+		if !strings.Contains(body, "visited") {
+			t.Errorf("renderBreadcrumbs must track visited folder IDs to prevent infinite loops: got body:\n%s", body)
+		}
+		if !strings.Contains(body, "depth") {
+			t.Errorf("renderBreadcrumbs must enforce hierarchy depth limit for circular reference protection: got body:\n%s", body)
 		}
 	})
 }
@@ -212,6 +215,17 @@ func TestWebNav_ClientURLHashRouter(t *testing.T) {
 		hasWarningToast := strings.Contains(appJS, "showToast")
 		if !hasWarningToast {
 			t.Errorf("app.js must call showToast when redirecting away from invalid or foreign folder")
+		}
+	})
+
+	t.Run("handleRoute invokes loadWorkspaceData", func(t *testing.T) {
+		body := extractFunctionBody(appJS, "handleRoute")
+		if body == "" {
+			t.Fatalf("app.js missing handleRoute function")
+		}
+
+		if !strings.Contains(body, "loadWorkspaceData") {
+			t.Errorf("handleRoute must invoke loadWorkspaceData: got body:\n%s", body)
 		}
 	})
 }

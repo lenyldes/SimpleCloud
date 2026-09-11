@@ -182,11 +182,11 @@ func TestUpload_MetadataPersistenceFailureRollsBackDisk(t *testing.T) {
 
 	userID := createTestUser(t, pool, 10*1024*1024)
 
-	// folder_id referencing a non-existent folder forces the files INSERT to
-	// fail (FK violation) AFTER the binary was written to disk — exercising
-	// the os.Remove + rollback + 500 path required by the spec.
-	missingFolder := uuid.New().String()
-	rr := uploadTestFile(t, fh, userID, "doomed.txt", []byte("written then rolled back"), missingFolder)
+	// Filename exceeding VARCHAR(512) forces the files INSERT to fail at DB
+	// level AFTER the binary was written to disk — exercising the
+	// os.Remove + rollback + 500 path required by the spec.
+	longFilename := strings.Repeat("a", 600) + ".txt"
+	rr := uploadTestFile(t, fh, userID, longFilename, []byte("written then rolled back"), "")
 
 	if rr.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 when metadata persistence fails, got %d", rr.Code)
@@ -306,13 +306,24 @@ func TestFileHandler_UploadHandler_BranchCoverage(t *testing.T) {
 		}
 	})
 
-	t.Run("UploadHandler non-UUID string folder_id triggers FK/exec error -> 500 and disk rollback", func(t *testing.T) {
+	t.Run("UploadHandler non-UUID string folder_id returns 400", func(t *testing.T) {
 		pool := setupTestPool(t)
 		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
 		testUser := createTestUser(t, pool, 10*1024*1024)
 		rr := uploadTestFile(t, fh, testUser, "nonuuid_folder.txt", []byte("content"), "invalid-folder-uuid")
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected 500 for non-UUID string folder_id causing DB insert failure, got %d", rr.Code)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for non-UUID string folder_id, got %d", rr.Code)
+		}
+	})
+
+	t.Run("UploadHandler non-existent folder_id returns 404", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		missingFolder := uuid.New().String()
+		rr := uploadTestFile(t, fh, testUser, "missing_folder.txt", []byte("content"), missingFolder)
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for non-existent user folder_id, got %d", rr.Code)
 		}
 	})
 
