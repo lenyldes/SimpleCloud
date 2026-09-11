@@ -112,7 +112,6 @@ async function handleRoute() {
       state.currentFolderId = null;
       activeRouteFolderId = null;
       window.location.hash = '#/';
-      await loadWorkspaceData();
       return;
     }
   }

@@ -197,11 +197,21 @@ function renderBreadcrumbs() {
 }
 
 function navigateToBreadcrumb(folderId) {
-  window.location.hash = folderId ? `#/folder/${folderId}` : '#/';
+  const targetHash = folderId ? `#/folder/${folderId}` : '#/';
+  if (window.location.hash === targetHash) {
+    if (typeof handleRoute === 'function') handleRoute();
+  } else {
+    window.location.hash = targetHash;
+  }
 }
 
 function navigateToFolder(folder) {
-  window.location.hash = `#/folder/${folder.id}`;
+  const targetHash = `#/folder/${folder.id}`;
+  if (window.location.hash === targetHash) {
+    if (typeof handleRoute === 'function') handleRoute();
+  } else {
+    window.location.hash = targetHash;
+  }
 }
 
 /**
@@ -241,8 +251,8 @@ function renderWorkspace() {
     if (a.isFolder && !b.isFolder) return -1;
     if (!a.isFolder && b.isFolder) return 1;
 
-    let valA = a[state.sortBy] || a.filename;
-    let valB = b[state.sortBy] || b.filename;
+    let valA = state.sortBy === 'date' ? (a.created_at || '') : (a[state.sortBy] || a.filename);
+    let valB = state.sortBy === 'date' ? (b.created_at || '') : (b[state.sortBy] || b.filename);
 
     if (state.sortBy === 'name') {
       return valA.localeCompare(valB) * (state.sortOrder === 'asc' ? 1 : -1);

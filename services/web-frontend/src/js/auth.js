@@ -125,9 +125,11 @@ async function handleLogout() {
     state.user = null;
     state.files = [];
     state.folders = [];
+    state.allFolders = [];
     state.currentFolderId = null;
     state.breadcrumbs = [{ id: null, name: 'All Files' }];
     state.quota.used = 0;
+    window.location.hash = '#/';
 
     updateUserAvatar();
     if (typeof updateQuotaDisplay === 'function') updateQuotaDisplay();
