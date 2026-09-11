@@ -15,11 +15,11 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 
 ### 1. Test Agent (`[TEST-AGENT]`)
 - **Responsibility:** Writes and updates unit & integration tests (`*_test.go`) based on OpenSpec requirements.
-- **Workflow:** Writes failing tests first (**RED** state) before any feature implementation code is written.
-- **Permissions:** Only writes and modifies test files (`*_test.go`). Must NOT modify production implementation code (`*.go` files outside of tests).
+- **Workflow:** Writes failing tests first (**RED** state) before any feature implementation code is written. Creates a local Git commit (`git commit`) to snapshot RED test progress, but strictly does NOT push (`git push`) to remote `main`, avoiding triggering CI/CD pipelines on expected failing tests.
+- **Permissions:** Only writes and modifies test files (`*_test.go`). Must NOT modify production implementation code (`*.go` files outside of tests). Strictly forbidden from pushing incomplete RED states to remote `main`.
 
 ### 2. Code Implementation Agent (`[CODE-AGENT]`)
-- **Responsibility:** Writes and refactors production logic (`*.go`) to make failing tests pass (**GREEN** state).
+- **Responsibility:** Writes and refactors production logic (`*.go`) to make failing tests pass (**GREEN** state). Verifies all tests pass locally (`go test ./...`), creates a Git commit (`git commit`), and pushes all commits to remote (`git push origin main`), triggering the remote CI/CD test and deployment pipeline on the verified GREEN state.
 - **Permissions:** Strictly FORBIDDEN from editing, altering, disabling, commenting out, or deleting any `*_test.go` files.
 - **Protocol on Test Issues:** If a test appears invalid or buggy, `[CODE-AGENT]` MUST NOT fix the test itself. It must pause and request `[TEST-AGENT]` to review and adjust the test.
 
@@ -73,8 +73,8 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 - **OpenSpec Transition Lifecycle:**
   1. `/openspec-explore` (Orchestrator) → Discusses architecture/IDEAS.md. When aligned with user, Orchestrator outputs a handoff prompt starting with ⚡ `/openspec-propose`.
   2. `/openspec-propose` (Orchestrator) → Creates OpenSpec change artifacts (`proposal.md`, `design.md`, `specs/`, `tasks.md`), then outputs a handoff prompt starting with ⚡ `/openspec-apply-change <change-name>` for `[TEST-AGENT]`.
-  3. ⚡ `/openspec-apply-change` (`[TEST-AGENT]`) → Loads OpenSpec tasks, writes RED failing tests (`*_test.go`), marks completed test tasks in `tasks.md`, commits (`git commit`) and pushes (`git push origin main`), then outputs a handoff prompt starting with ⚡ `/openspec-apply-change <change-name>` for `[CODE-AGENT]`.
-  4. ⚡ `/openspec-apply-change` (`[CODE-AGENT]`) → Loads OpenSpec tasks, writes GREEN implementation (`*.go`), marks completed impl tasks in `tasks.md`, commits (`git commit`) and pushes (`git push origin main`), then outputs a detailed audit handoff prompt for 💬 `[AUDIT-AGENT]`.
+  3. ⚡ `/openspec-apply-change` (`[TEST-AGENT]`) → Loads OpenSpec tasks, writes RED failing tests (`*_test.go`), marks completed test tasks in `tasks.md`, commits locally (`git commit`) WITHOUT pushing to remote, then outputs a handoff prompt starting with ⚡ `/openspec-apply-change <change-name>` for `[CODE-AGENT]`.
+  4. ⚡ `/openspec-apply-change` (`[CODE-AGENT]`) → Loads OpenSpec tasks, writes GREEN implementation (`*.go`), marks completed impl tasks in `tasks.md`, commits (`git commit`) and pushes all commits to remote (`git push origin main`), then outputs a detailed audit handoff prompt for 💬 `[AUDIT-AGENT]`.
   5. `[AUDIT-AGENT]` → Runs automated tests and linters, dispatches focused domain subagents to review touched files concurrently (`[QA-TEST-REVIEWER]`, `[BACKEND-REVIEWER]`, `[FRONTEND-REVIEWER]`, `[DEVOPS-REVIEWER]`), verifies flagged findings via targeted `view_file`, enforces zero-tolerance to silent failures (`set -e`, absence of `|| true`), and inspects GitHub Actions CI/CD status and raw deployment logs (`gh run view --log`). If the change fixes `BUGS.md` findings, verifies each fix and lists the exact finding IDs to mark as fixed in the audit report. If 100% green without masked errors, approves phase and outputs handoff prompt starting with ⚡ `/openspec-archive-change` for Orchestrator.
   6. `/openspec-archive-change` (Orchestrator) → Archives change to `openspec/changes/archive/`, syncs specs, updates `ROADMAP.md` checkboxes `- [x]`, marks fixed `BUGS.md` findings with `✅ <change-name>, <date>` per the audit report, commits (`git commit`), pushes (`git push origin main`) to trigger CI/CD deploy, and outputs handoff prompt starting with ⚡ `/openspec-explore` for the NEXT phase.
 
@@ -82,10 +82,13 @@ All AI agents working on this codebase MUST strictly adhere to Test-Driven Devel
 
 ## Git Commit Format & Rules
 
-Every task completion MUST be immediately committed to Git and pushed to the remote repository.
+Every task completion MUST be committed to Git.
 
 ### Automatic Git Push Policy
-Every agent that creates commits (`[TEST-AGENT]`, `[CODE-AGENT]`, `[ORCHESTRATOR-AGENT]`) MUST execute `git push origin main` immediately after committing changes. This guarantees remote repository synchronization and triggers the automated GitHub Actions CI/CD test and deployment pipeline.
+Agents must follow strict branch hygiene for remote `main`:
+- `[TEST-AGENT]` creates a local commit (`git commit`) to snapshot RED tests, but MUST NOT execute `git push origin main`. This prevents GitHub Actions CI from triggering and failing on intentionally failing RED tests, saving CI runner minutes and avoiding false failure notifications.
+- `[CODE-AGENT]` creates a commit (`git commit`) once all tests pass (**GREEN** state) and MUST execute `git push origin main`. This pushes both the RED and GREEN commits to remote `main` simultaneously and triggers the automated GitHub Actions CI/CD test and deployment pipeline on verified green code.
+- `[ORCHESTRATOR-AGENT]` MUST execute `git push origin main` immediately after committing spec, documentation, or archiving changes.
 
 ### Commit Message Syntax
 All git commit messages MUST strictly follow the format:
