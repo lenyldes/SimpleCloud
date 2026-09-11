@@ -39,6 +39,12 @@ func NewFolderHandler(pool *pgxpool.Pool, engine *storage.DiskEngine) *FolderHan
 	}
 }
 
+func writeFolderJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
 // CreateHandler handles POST /api/v1/folders
 func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -48,9 +54,7 @@ func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := auth.GetUserIDFromContext(r.Context())
 	if !ok || userID == uuid.Nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		writeFolderJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -61,17 +65,13 @@ func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 		ParentID *string `json:"parent_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON payload"})
+		writeFolderJSONError(w, http.StatusBadRequest, "invalid JSON payload")
 		return
 	}
 
 	trimmedName := strings.TrimSpace(req.Name)
 	if trimmedName == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "folder name cannot be empty"})
+		writeFolderJSONError(w, http.StatusBadRequest, "folder name cannot be empty")
 		return
 	}
 
@@ -79,9 +79,7 @@ func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 	if req.ParentID != nil && *req.ParentID != "" {
 		parsed, err := uuid.Parse(*req.ParentID)
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid parent_id"})
+			writeFolderJSONError(w, http.StatusBadRequest, "invalid parent_id")
 			return
 		}
 		parentUUID = &parsed
@@ -93,9 +91,7 @@ func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 				parsed, userID,
 			).Scan(&dummy)
 			if err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusNotFound)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": "parent folder not found"})
+				writeFolderJSONError(w, http.StatusNotFound, "parent folder not found")
 				return
 			}
 		}
@@ -114,9 +110,7 @@ func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 			folderID, userID, dbParentID, trimmedName,
 		)
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to create folder record"})
+			writeFolderJSONError(w, http.StatusInternalServerError, "failed to create folder record")
 			return
 		}
 	}
@@ -143,9 +137,7 @@ func (fh *FolderHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := auth.GetUserIDFromContext(r.Context())
 	if !ok || userID == uuid.Nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		writeFolderJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -189,9 +181,7 @@ func (fh *FolderHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to query folders"})
+		writeFolderJSONError(w, http.StatusInternalServerError, "failed to query folders")
 		return
 	}
 	defer rows.Close()
@@ -219,9 +209,7 @@ func (fh *FolderHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := rows.Err(); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed reading folders"})
+		writeFolderJSONError(w, http.StatusInternalServerError, "failed reading folders")
 		return
 	}
 
@@ -239,33 +227,25 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := auth.GetUserIDFromContext(r.Context())
 	if !ok || userID == uuid.Nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		writeFolderJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	folderID := strings.TrimPrefix(r.URL.Path, "/api/v1/folders/")
 	folderID = strings.Trim(folderID, "/")
 	if folderID == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "missing folder ID"})
+		writeFolderJSONError(w, http.StatusBadRequest, "missing folder ID")
 		return
 	}
 
 	parsedFolderID, err := uuid.Parse(folderID)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid folder ID"})
+		writeFolderJSONError(w, http.StatusBadRequest, "invalid folder ID")
 		return
 	}
 
 	if fh.pool == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "folder not found"})
+		writeFolderJSONError(w, http.StatusNotFound, "folder not found")
 		return
 	}
 
@@ -275,17 +255,13 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		parsedFolderID, userID,
 	).Scan(&dummy)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "folder not found"})
+		writeFolderJSONError(w, http.StatusNotFound, "folder not found")
 		return
 	}
 
 	tx, err := fh.pool.Begin(r.Context())
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to start transaction"})
+		writeFolderJSONError(w, http.StatusInternalServerError, "failed to start transaction")
 		return
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
@@ -304,11 +280,10 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	`
 	fileRows, err := tx.Query(r.Context(), queryCollectFiles, parsedFolderID, userID)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to collect folder files"})
+		writeFolderJSONError(w, http.StatusInternalServerError, "failed to collect folder files")
 		return
 	}
+	defer fileRows.Close()
 
 	type fileToDelete struct {
 		id          string
@@ -320,16 +295,17 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	for fileRows.Next() {
 		var f fileToDelete
-		if err := fileRows.Scan(&f.id, &f.storagePath, &f.size); err == nil {
-			filesToDelete = append(filesToDelete, f)
-			totalSize += f.size
+		if err := fileRows.Scan(&f.id, &f.storagePath, &f.size); err != nil {
+			_ = tx.Rollback(r.Context())
+			writeFolderJSONError(w, http.StatusInternalServerError, "failed to scan folder files")
+			return
 		}
+		filesToDelete = append(filesToDelete, f)
+		totalSize += f.size
 	}
 	if err := fileRows.Err(); err != nil {
-		fileRows.Close()
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed reading folder files"})
+		_ = tx.Rollback(r.Context())
+		writeFolderJSONError(w, http.StatusInternalServerError, "failed reading folder files")
 		return
 	}
 	fileRows.Close()
@@ -346,9 +322,7 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	`
 	_, err = tx.Exec(r.Context(), queryDeleteFiles, parsedFolderID, userID)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete subfolder files"})
+		writeFolderJSONError(w, http.StatusInternalServerError, "failed to delete subfolder files")
 		return
 	}
 
@@ -364,9 +338,7 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	`
 	_, err = tx.Exec(r.Context(), queryDeleteFolders, parsedFolderID, userID)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete subfolders"})
+		writeFolderJSONError(w, http.StatusInternalServerError, "failed to delete subfolders")
 		return
 	}
 
@@ -377,17 +349,13 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 			totalSize, userID,
 		)
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to update user quota"})
+			writeFolderJSONError(w, http.StatusInternalServerError, "failed to update user quota")
 			return
 		}
 	}
 
 	if err := tx.Commit(r.Context()); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to commit folder deletion"})
+		writeFolderJSONError(w, http.StatusInternalServerError, "failed to commit folder deletion")
 		return
 	}
 
