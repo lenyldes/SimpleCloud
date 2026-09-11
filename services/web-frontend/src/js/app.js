@@ -22,6 +22,16 @@ window.state = state;
 let activeRouteFolderId = Symbol('initial');
 
 /**
+ * Reset router folder caching state.
+ */
+function resetRoutingState() {
+  activeRouteFolderId = null;
+}
+if (typeof window !== 'undefined') {
+  window.resetRoutingState = resetRoutingState;
+}
+
+/**
  * Bootstrap and initialize application components.
  */
 async function init() {
@@ -37,7 +47,7 @@ document.addEventListener('DOMContentLoaded', init);
  * Fetch and refresh workspace files and folders.
  */
 async function loadWorkspaceData() {
-  await checkAuth();
+  if (!state.user) return;
   activeRouteFolderId = state.currentFolderId;
   await Promise.all([loadFiles(), loadFolders()]);
   updateQuotaDisplay();
@@ -90,8 +100,9 @@ async function loadFolders() {
 
 /**
  * Handle URL hash routing and synchronize workspace folder state.
+ * @param {boolean} [force=false]
  */
-async function handleRoute() {
+async function handleRoute(force = false) {
   const hash = window.location.hash || '';
   const match = hash.match(/^#\/folder\/([a-zA-Z0-9-]+)$/);
   const targetFolderId = match ? match[1].toLowerCase() : null;
@@ -116,12 +127,15 @@ async function handleRoute() {
     }
   }
 
-  if (activeRouteFolderId === targetFolderId && state.currentFolderId === targetFolderId) {
+  if (force !== true && activeRouteFolderId === targetFolderId && state.currentFolderId === targetFolderId) {
     return;
   }
   activeRouteFolderId = targetFolderId;
   state.currentFolderId = targetFolderId;
   await loadWorkspaceData();
+}
+if (typeof window !== 'undefined') {
+  window.handleRoute = handleRoute;
 }
 
 /**

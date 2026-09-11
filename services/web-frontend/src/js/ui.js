@@ -199,7 +199,7 @@ function renderBreadcrumbs() {
 function navigateToBreadcrumb(folderId) {
   const targetHash = folderId ? `#/folder/${folderId}` : '#/';
   if (window.location.hash === targetHash) {
-    if (typeof handleRoute === 'function') handleRoute();
+    if (typeof handleRoute === 'function') handleRoute(true);
   } else {
     window.location.hash = targetHash;
   }
@@ -208,7 +208,7 @@ function navigateToBreadcrumb(folderId) {
 function navigateToFolder(folder) {
   const targetHash = `#/folder/${folder.id}`;
   if (window.location.hash === targetHash) {
-    if (typeof handleRoute === 'function') handleRoute();
+    if (typeof handleRoute === 'function') handleRoute(true);
   } else {
     window.location.hash = targetHash;
   }
@@ -251,15 +251,21 @@ function renderWorkspace() {
     if (a.isFolder && !b.isFolder) return -1;
     if (!a.isFolder && b.isFolder) return 1;
 
-    let valA = state.sortBy === 'date' ? (a.created_at || '') : (a[state.sortBy] || a.filename);
-    let valB = state.sortBy === 'date' ? (b.created_at || '') : (b[state.sortBy] || b.filename);
-
-    if (state.sortBy === 'name') {
-      return valA.localeCompare(valB) * (state.sortOrder === 'asc' ? 1 : -1);
-    } else {
-      if (valA === valB) return 0;
-      return (valA > valB ? 1 : -1) * (state.sortOrder === 'asc' ? 1 : -1);
+    if (state.sortBy === 'date') {
+      const timeA = Date.parse(a.created_at) || 0;
+      const timeB = Date.parse(b.created_at) || 0;
+      return (timeA - timeB) * (state.sortOrder === 'asc' ? 1 : -1);
     }
+
+    if (state.sortBy === 'size') {
+      const sizeA = typeof a.size === 'number' ? a.size : -1;
+      const sizeB = typeof b.size === 'number' ? b.size : -1;
+      return (sizeA - sizeB) * (state.sortOrder === 'asc' ? 1 : -1);
+    }
+
+    const nameA = a.filename || '';
+    const nameB = b.filename || '';
+    return nameA.localeCompare(nameB) * (state.sortOrder === 'asc' ? 1 : -1);
   });
 
   if (allItems.length === 0) {

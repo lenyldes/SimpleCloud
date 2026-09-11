@@ -129,6 +129,10 @@ async function handleLogout() {
     state.currentFolderId = null;
     state.breadcrumbs = [{ id: null, name: 'All Files' }];
     state.quota.used = 0;
+    state.searchQuery = '';
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) searchInput.value = '';
+    if (typeof resetRoutingState === 'function') resetRoutingState();
     window.location.hash = '#/';
 
     updateUserAvatar();

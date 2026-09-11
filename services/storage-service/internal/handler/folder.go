@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -192,7 +193,9 @@ func (fh *FolderHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 		var createdAt time.Time
 
 		if err := rows.Scan(&id, &dbUserID, &parentID, &name, &createdAt); err != nil {
-			continue
+			log.Printf("ListHandler: failed to scan folder: %v", err)
+			writeFolderJSONError(w, http.StatusInternalServerError, "failed to scan folder")
+			return
 		}
 		var parentIDStr *string
 		if parentID != nil {
@@ -255,7 +258,11 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		parsedFolderID, userID,
 	).Scan(&dummy)
 	if err != nil {
-		writeFolderJSONError(w, http.StatusNotFound, "folder not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeFolderJSONError(w, http.StatusNotFound, "folder not found")
+			return
+		}
+		writeFolderJSONError(w, http.StatusInternalServerError, "database error")
 		return
 	}
 
