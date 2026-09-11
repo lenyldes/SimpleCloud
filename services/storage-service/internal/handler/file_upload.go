@@ -97,9 +97,25 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	var folderUUID *uuid.UUID
 	if folderIDVal != "" {
 		folderIDPtr = &folderIDVal
-		if parsed, parseErr := uuid.Parse(folderIDVal); parseErr == nil {
-			folderUUID = &parsed
+		parsed, parseErr := uuid.Parse(folderIDVal)
+		if parseErr != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid folder ID"})
+			return
 		}
+		var dummy int
+		err = tx.QueryRow(r.Context(),
+			`SELECT 1 FROM folders WHERE id = $1 AND user_id = $2`,
+			parsed, userID,
+		).Scan(&dummy)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "folder not found"})
+			return
+		}
+		folderUUID = &parsed
 	}
 
 	file, header, err := r.FormFile("file")

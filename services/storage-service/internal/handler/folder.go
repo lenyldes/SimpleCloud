@@ -218,6 +218,13 @@ func (fh *FolderHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	if err := rows.Err(); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed reading folders"})
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)
@@ -317,6 +324,13 @@ func (fh *FolderHandler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 			filesToDelete = append(filesToDelete, f)
 			totalSize += f.size
 		}
+	}
+	if err := fileRows.Err(); err != nil {
+		fileRows.Close()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed reading folder files"})
+		return
 	}
 	fileRows.Close()
 

@@ -160,10 +160,15 @@ function renderBreadcrumbs() {
   const crumbs = [{ id: null, name: 'All Files' }];
   if (state.currentFolderId && Array.isArray(state.allFolders)) {
     const chain = [];
+    const visited = new Set();
+    let depth = 0;
     let curr = state.allFolders.find(f => f.id === state.currentFolderId);
-    while (curr) {
+    while (curr && depth < 50) {
+      if (visited.has(curr.id)) break;
+      visited.add(curr.id);
       chain.unshift({ id: curr.id, name: curr.name || curr.filename });
       curr = curr.parent_id ? state.allFolders.find(f => f.id === curr.parent_id) : null;
+      depth++;
     }
     crumbs.push(...chain);
   }
@@ -191,16 +196,12 @@ function renderBreadcrumbs() {
   });
 }
 
-async function navigateToBreadcrumb(folderId) {
-  state.currentFolderId = folderId;
+function navigateToBreadcrumb(folderId) {
   window.location.hash = folderId ? `#/folder/${folderId}` : '#/';
-  await loadWorkspaceData();
 }
 
-async function navigateToFolder(folder) {
-  state.currentFolderId = folder.id;
+function navigateToFolder(folder) {
   window.location.hash = `#/folder/${folder.id}`;
-  await loadWorkspaceData();
 }
 
 /**
@@ -246,6 +247,7 @@ function renderWorkspace() {
     if (state.sortBy === 'name') {
       return valA.localeCompare(valB) * (state.sortOrder === 'asc' ? 1 : -1);
     } else {
+      if (valA === valB) return 0;
       return (valA > valB ? 1 : -1) * (state.sortOrder === 'asc' ? 1 : -1);
     }
   });

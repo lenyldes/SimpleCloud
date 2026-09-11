@@ -94,18 +94,19 @@ async function loadFolders() {
 async function handleRoute() {
   const hash = window.location.hash || '';
   const match = hash.match(/^#\/folder\/([a-zA-Z0-9-]+)$/);
-  const targetFolderId = match ? match[1] : null;
+  const targetFolderId = match ? match[1].toLowerCase() : null;
 
   if (targetFolderId) {
-    if (!state.allFolders || state.allFolders.length === 0) {
+    let exists = Array.isArray(state.allFolders) && state.allFolders.some(f => (f.id || '').toLowerCase() === targetFolderId);
+    if (!exists) {
       const res = window.api && window.api.listAllFolders
         ? await window.api.listAllFolders()
         : await fetchWithAuth('/api/v1/folders?all=true');
       if (res && res.ok) {
         state.allFolders = await res.json();
       }
+      exists = Array.isArray(state.allFolders) && state.allFolders.some(f => (f.id || '').toLowerCase() === targetFolderId);
     }
-    const exists = Array.isArray(state.allFolders) && state.allFolders.some(f => f.id === targetFolderId);
     if (!exists) {
       showToast('Folder not found or access denied', 'danger');
       state.currentFolderId = null;
@@ -131,11 +132,12 @@ async function handleRoute() {
 async function handleFileUpload(files) {
   if (!files || files.length === 0) return;
 
+  const targetFolderId = state.currentFolderId;
   for (const file of files) {
     const formData = new FormData();
     formData.append('file', file);
-    if (state.currentFolderId) {
-      formData.append('folder_id', state.currentFolderId);
+    if (targetFolderId) {
+      formData.append('folder_id', targetFolderId);
     }
 
     try {
