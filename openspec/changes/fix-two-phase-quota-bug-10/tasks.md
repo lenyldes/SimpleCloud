@@ -1,8 +1,8 @@
 ## 1. Test Preparation & RED State Tests
 
-- [ ] 1.1 In `file_upload_test.go`, add `t.Cleanup(func() { _ = os.Remove(tempFilePath) })` inside `createMultipartRequestWithDiskTempFile` and verify existing tests compile and pass.
-- [ ] 1.2 In `file_upload_validation_test.go`, write failing unit tests for filename validation (filenames > 255 characters or empty returning HTTP 400 Bad Request) and folder name null byte validation (`\x00` returning HTTP 400 Bad Request).
-- [ ] 1.3 In `file_upload_validation_test.go`, write failing tests for the Two-Phase Quota Pattern: testing concurrent upload race conditions, rollback and logged orphan file cleanup on SQL/quota failures, and verify tests fail in RED state while keeping file length <= 450 lines.
+- [x] 1.1 In `file_upload_test.go`, add `t.Cleanup(func() { _ = os.Remove(tempFilePath) })` inside `createMultipartRequestWithDiskTempFile` and verify existing tests compile and pass.
+- [x] 1.2 In `file_upload_validation_test.go`, write failing unit tests for filename validation (filenames > 255 characters or empty returning HTTP 400 Bad Request) and folder name null byte validation (`\x00` returning HTTP 400 Bad Request).
+- [x] 1.3 In `file_upload_validation_test.go`, write failing tests for the Two-Phase Quota Pattern: testing concurrent upload race conditions, rollback and logged orphan file cleanup on SQL/quota failures, and verify tests fail in RED state while keeping file length <= 450 lines.
 
 ## 2. Production Implementation & GREEN State Verification
 

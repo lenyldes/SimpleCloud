@@ -240,6 +240,7 @@ func createMultipartRequestWithDiskTempFile(t *testing.T, userID uuid.UUID, file
 		t.Fatalf("expected *os.File for disk-backed multipart file header, got %T", f)
 	}
 	tempFilePath := osFile.Name()
+	t.Cleanup(func() { _ = os.Remove(tempFilePath) })
 
 	if _, err := os.Stat(tempFilePath); err != nil {
 		t.Fatalf("expected temp file %s to exist before handler execution: %v", tempFilePath, err)
