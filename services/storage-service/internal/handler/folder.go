@@ -79,6 +79,10 @@ func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 		writeFolderJSONError(w, http.StatusBadRequest, "folder name cannot exceed 255 characters")
 		return
 	}
+	if strings.Contains(trimmedName, "\x00") {
+		writeFolderJSONError(w, http.StatusBadRequest, "folder name cannot contain null bytes")
+		return
+	}
 	if strings.Contains(trimmedName, "/") || strings.Contains(trimmedName, "\\") || strings.Contains(trimmedName, "..") {
 		writeFolderJSONError(w, http.StatusBadRequest, "folder name cannot contain path traversal or slashes")
 		return

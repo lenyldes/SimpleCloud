@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +17,15 @@ import (
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
 )
+
+func cleanupOrphanFile(storagePath string) {
+	if storagePath == "" {
+		return
+	}
+	if rmErr := os.Remove(storagePath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+		log.Printf("file_upload: failed to clean up orphan storage file %s: %v", storagePath, rmErr)
+	}
+}
 
 // UploadHandler handles POST /api/v1/files/upload
 func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -44,18 +55,10 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err := fh.pool.Begin(r.Context())
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to start transaction"})
-		return
-	}
-	defer func() { _ = tx.Rollback(r.Context()) }()
-
+	// Phase 1: Query remaining quota non-transactionally
 	var usedBytes, quotaBytes int64
-	err = tx.QueryRow(r.Context(),
-		`SELECT used_bytes, quota_bytes FROM users WHERE id = $1 FOR UPDATE`,
+	err := fh.pool.QueryRow(r.Context(),
+		`SELECT used_bytes, quota_bytes FROM users WHERE id = $1`,
 		userID,
 	).Scan(&usedBytes, &quotaBytes)
 	if err != nil {
@@ -66,8 +69,11 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	remainingQuota := quotaBytes - usedBytes
-	if remainingQuota < 0 {
-		remainingQuota = 0
+	if remainingQuota <= 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Storage quota exceeded"})
+		return
 	}
 
 	if r.Header.Get("Content-Length") != "" {
@@ -112,7 +118,7 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var dummy int
-		err = tx.QueryRow(r.Context(),
+		err = fh.pool.QueryRow(r.Context(),
 			`SELECT 1 FROM folders WHERE id = $1 AND user_id = $2`,
 			parsed, userID,
 		).Scan(&dummy)
@@ -140,6 +146,13 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	if header.Filename == "" || strings.TrimSpace(header.Filename) == "" || len(header.Filename) > 255 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid filename"})
+		return
+	}
+
 	fileID, err := generateUUID()
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -163,11 +176,43 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	storagePath, _ := fh.engine.GetFilePath(fileID)
 
+	// Phase 2: Short atomic transaction to verify quota and commit metadata
+	tx, err := fh.pool.Begin(r.Context())
+	if err != nil {
+		cleanupOrphanFile(storagePath)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to start transaction"})
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	var currentUsed, currentQuota int64
+	err = tx.QueryRow(r.Context(),
+		`SELECT used_bytes, quota_bytes FROM users WHERE id = $1 FOR UPDATE`,
+		userID,
+	).Scan(&currentUsed, &currentQuota)
+	if err != nil {
+		_ = tx.Rollback(r.Context())
+		cleanupOrphanFile(storagePath)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "user record not found"})
+		return
+	}
+
+	if currentUsed+size > currentQuota {
+		_ = tx.Rollback(r.Context())
+		cleanupOrphanFile(storagePath)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Storage quota exceeded"})
+		return
+	}
+
 	var dbFolderID interface{} = nil
 	if folderUUID != nil {
 		dbFolderID = *folderUUID
-	} else if folderIDVal != "" {
-		dbFolderID = folderIDVal
 	}
 
 	createdAt := time.Now()
@@ -177,7 +222,8 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		fileID, userID, dbFolderID, header.Filename, size, sha256Hex, storagePath, createdAt,
 	)
 	if err != nil {
-		_ = os.Remove(storagePath)
+		_ = tx.Rollback(r.Context())
+		cleanupOrphanFile(storagePath)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to save metadata: %v", err)})
@@ -189,7 +235,8 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 		size, userID,
 	)
 	if err != nil {
-		_ = os.Remove(storagePath)
+		_ = tx.Rollback(r.Context())
+		cleanupOrphanFile(storagePath)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to update user quota: %v", err)})
@@ -197,7 +244,7 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tx.Commit(r.Context()); err != nil {
-		_ = os.Remove(storagePath)
+		cleanupOrphanFile(storagePath)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to commit metadata: %v", err)})

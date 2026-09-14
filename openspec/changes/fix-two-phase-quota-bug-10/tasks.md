@@ -6,10 +6,10 @@
 
 ## 2. Production Implementation & GREEN State Verification
 
-- [ ] 2.1 In `folder.go:CreateHandler`, add null byte check `strings.Contains(trimmedName, "\x00")` returning HTTP 400 Bad Request and verify folder null byte test passes.
-- [ ] 2.2 In `file_upload.go:UploadHandler`, add filename validation ensuring `header.Filename != ""` and `len(header.Filename) <= 255` returning HTTP 400 Bad Request, verifying filename validation tests pass.
-- [ ] 2.3 In `file_upload.go:UploadHandler`, refactor upload flow to Two-Phase Quota:
+- [x] 2.1 In `folder.go:CreateHandler`, add null byte check `strings.Contains(trimmedName, "\x00")` returning HTTP 400 Bad Request and verify folder null byte test passes.
+- [x] 2.2 In `file_upload.go:UploadHandler`, add filename validation ensuring `header.Filename != ""` and `len(header.Filename) <= 255` returning HTTP 400 Bad Request, verifying filename validation tests pass.
+- [x] 2.3 In `file_upload.go:UploadHandler`, refactor upload flow to Two-Phase Quota:
   - Phase 1: Query remaining quota non-transactionally, perform pre-flight checks, read multipart form, and stream file to disk without holding a DB transaction.
   - Phase 2: Open a short atomic transaction, execute `SELECT ... FOR UPDATE`, verify quota against written size, insert metadata, increment `used_bytes`, and commit.
-- [ ] 2.4 In `file_upload.go:UploadHandler`, ensure all compensation `os.Remove(storagePath)` calls on SQL/quota errors log removal errors via `log.Printf`.
-- [ ] 2.5 Run `go test -v -race -cover ./...` in `services/storage-service/internal/handler`, verify all tests pass with >= 85% coverage and all files remain strictly <= 450 lines.
+- [x] 2.4 In `file_upload.go:UploadHandler`, ensure all compensation `os.Remove(storagePath)` calls on SQL/quota errors log removal errors via `log.Printf`.
+- [x] 2.5 Run `go test -v -race -cover ./...` in `services/storage-service/internal/handler`, verify all tests pass with >= 85% coverage and all files remain strictly <= 450 lines.
