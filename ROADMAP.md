@@ -56,6 +56,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Universal File Line Limit & Architecture Guard (Part 9 of Phase 7): enforce universal <= 450 lines limit on all readable text files via automated Go architecture test in CI/CD, and decompose 5 violating files (`file.go`, `file_test.go`, `folder_test.go`, `auth/handler_test.go`, `app.js`) in `refactor-max-file-lines-limit`.
   - [x] Nested Folder Navigation & Breadcrumbs Cache Sync (Part 10 of Phase 7): fixed BUG-8, BUG-9 in `fix-folder-navigation-bugs-8-9`.
   - [x] Dynamic MIME Type Detection, Range Requests & Reverse Proxy CSRF Port Preservation (Part 11 of Phase 7): fixed BUG-4, BUG-5 in `fix-mime-range-and-csrf-bugs-4-5`.
+  - [x] Accessible Modals, Escape Dismissal, In-Flight Lock & Quota Auto-Refresh (Part 12 of Phase 7): fixed BUG-7 in `fix-modal-polish-and-quota-bug-7`.
   - [x] Guided User Manual Testing Protocol: `[ORCHESTRATOR-AGENT]` provides interactive step-by-step test instructions and report template for user feedback (`BUGS.md`).
   - [ ] User Bug Triage & Resolution: Implement targeted fixes for all user-reported UI/UX issues and edge cases (`BUGS.md`).
     - [x] BUG-1: Web UI Profile Menu & Logout button (`fix-logout-button`).
@@ -64,6 +65,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
     - [x] BUG-4 (Checklist 2.5): Dynamic MIME type detection & HTTP Range requests (206 Partial Content) (`fix-mime-range-and-csrf-bugs-4-5`).
     - [x] BUG-5: Nginx reverse proxy CSRF Origin preservation on custom ports (`fix-mime-range-and-csrf-bugs-4-5`).
     - [x] BUG-6: Web UI File and Folder Delete Controls (`fix-ui-delete-controls-bug-6`).
+    - [x] BUG-7 (Checklist 4.1.b, 4.2.b, 4.3.b, 6.3): Modal polish (Escape dismissal, in-flight request lock, safe focus, XSS protection, quota refresh) (`fix-modal-polish-and-quota-bug-7`).
     - [x] BUG-8 (Checklist 3.3): Nested subfolders visibility, URL routing & F5 reload recovery (`fix-folder-navigation-bugs-8-9`).
     - [x] BUG-9 (Checklist 3.4): Dynamic breadcrumbs and cache synchronization upon navigation (`fix-folder-navigation-bugs-8-9`).
   - [ ] Final v1.0 Release Verification: End-to-end audit and release build ready for production use.

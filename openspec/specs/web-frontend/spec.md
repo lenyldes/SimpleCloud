@@ -50,7 +50,7 @@ The frontend SHALL snapshot the selected file collection before clearing the fil
 - **THEN** the system SHALL retain an immutable snapshot of the selected files to execute the upload and reset the file input element value without emptying the payload.
 
 ### Requirement: File Action Operations and Modals
-The system SHALL provide file previews (image lightbox, text/code viewer, video player), direct download links, file and folder deletion controls in grid and list views with modal confirmation, and new folder creation.
+The system SHALL provide file previews (image lightbox, text/code viewer, video player), direct download links, accessible file and folder deletion controls in grid and list views with race-free modal confirmation, safe keyboard focus management, centralized Escape key dismissal, and new folder creation.
 
 #### Scenario: Opening image preview lightbox
 - **WHEN** user clicks on an image file card in the file grid
@@ -62,19 +62,23 @@ The system SHALL provide file previews (image lightbox, text/code viewer, video 
 
 #### Scenario: Initiating file deletion in grid or list view
 - **WHEN** user clicks the delete button on a file card or table row
-- **THEN** system SHALL prevent default navigation or preview actions and display the confirmation modal (#modal-confirm-delete) with the file name.
+- **THEN** system SHALL prevent default navigation or preview actions, display the accessible confirmation modal (`#modal-confirm-delete` with `role="dialog"`, `aria-modal="true"`, and `aria-labelledby`), safely render the file name via `.textContent` into `#confirm-delete-target-name`, hide `#confirm-delete-folder-warning`, and transfer keyboard focus to the Cancel button (`#confirm-delete-cancel`).
 
 #### Scenario: Initiating folder deletion in grid or list view
 - **WHEN** user clicks the delete button on a folder card or table row
-- **THEN** system SHALL prevent folder navigation and display the confirmation modal (#modal-confirm-delete) with the folder name and a warning that all nested files and subfolders will be deleted.
+- **THEN** system SHALL prevent folder navigation, display the accessible confirmation modal with the folder name rendered via `.textContent`, display `#confirm-delete-folder-warning` using class `.confirm-delete-folder-warning`, and transfer keyboard focus to the Cancel button (`#confirm-delete-cancel`).
 
 #### Scenario: Confirming item deletion
 - **WHEN** user clicks the confirm delete button in the confirmation modal
-- **THEN** system SHALL invoke the appropriate DELETE API endpoint, close the confirmation modal, display a success toast notification, and reload workspace items and storage quota.
+- **THEN** system SHALL mark deletion in flight (`isDeleting = true`), disable the Delete button (`#confirm-delete-btn`), Cancel button (`#confirm-delete-cancel`), close button (`#confirm-delete-close`), ignore backdrop clicks and Escape key presses, execute the DELETE API request, close the modal upon success, display a success toast notification, and dynamically reload workspace data and quota usage.
 
 #### Scenario: Cancelling item deletion
-- **WHEN** user clicks the cancel button or backdrop in the confirmation modal
+- **WHEN** user clicks the cancel button or backdrop in the confirmation modal while no deletion request is in flight
 - **THEN** system SHALL dismiss the confirmation modal without issuing any DELETE request and preserve the workspace view intact.
+
+#### Scenario: Closing active modal via Escape key
+- **WHEN** user presses the `Escape` key while an accessible modal (delete confirmation, new folder dialog, image lightbox, text viewer, or video player) is open and no deletion request is in flight
+- **THEN** system SHALL dismiss the currently active modal dialog and close the profile dropdown without mutating server state.
 
 ### Requirement: UI 401 Intercept and Authentication Modal
 The web frontend JavaScript application (`app.js`) SHALL intercept all `401 Unauthorized` HTTP responses from background API requests, display a modal login window over the blurred application view without destroying local state, and allow the user to authenticate and retry the failed operation.
@@ -103,7 +107,7 @@ The web frontend SHALL render folder items alongside files in grid and list view
 - **THEN** system SHALL post to `/api/v1/folders` with `parent_id`, close the modal, and refresh workspace data using `state.currentFolderId` so that the newly created subfolder is immediately visible in the active view.
 
 ### Requirement: Quota Progress Indicator in UI Sidebar
-The web frontend SHALL render a responsive progress bar in the sidebar with dynamic color thresholds (blue <= 70%, orange > 70%, red > 85%), deriving `used_bytes` and `quota_bytes` from the authenticated user profile response (`/api/v1/auth/me`) instead of summing file sizes from the currently listed files.
+The web frontend SHALL render a responsive progress bar in the sidebar with dynamic color thresholds (blue <= 70%, orange > 70%, red > 85%), deriving `used_bytes` and `quota_bytes` from the authenticated user profile response (`/api/v1/auth/me`) instead of summing file sizes from the currently listed files, and SHALL proactively re-fetch user profile data via `checkAuth()` during `loadWorkspaceData()` so that storage usage updates immediately following file uploads and deletions without requiring a page refresh.
 
 #### Scenario: Quota display reflects total usage
 - **WHEN** the user has files stored in nested folders and opens the root view
@@ -111,7 +115,11 @@ The web frontend SHALL render a responsive progress bar in the sidebar with dyna
 
 #### Scenario: Updating quota display after upload
 - **WHEN** file upload completes successfully
-- **THEN** system SHALL refresh the used/quota values from the server, update the percentage text, and adjust sidebar progress bar width and status color.
+- **THEN** system SHALL refresh user profile data from `/api/v1/auth/me` via `loadWorkspaceData()`, update the percentage text, and adjust sidebar progress bar width and status color without manual page reload (F5).
+
+#### Scenario: Updating quota display after deletion
+- **WHEN** file or folder deletion completes successfully
+- **THEN** system SHALL refresh user profile data from `/api/v1/auth/me` via `loadWorkspaceData()`, update the percentage text, and adjust sidebar progress bar width and status color without manual page reload (F5).
 
 ### Requirement: Self-Hosted Typography Assets
 The web frontend SHALL serve its typography (the Inter font family) from its own static assets instead of external CDNs, so the page renders with the intended design under the existing Content-Security-Policy (`style-src 'self'`, `default-src 'self'`) without any CSP violation and without third-party requests.
