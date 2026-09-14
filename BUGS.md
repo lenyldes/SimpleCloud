@@ -80,28 +80,11 @@
 
 ---
 
-### 🟡 BUG-4: 2.5. Превью файлов: отсутствие детекции MIME-типов и поддержки Range-запросов (206 Partial Content)
-- **Компонент:** Бэкенд (`services/storage-service/internal/handler/file.go:301-307`)
-- **Серьёзность:** Medium / Core Feature (Превью файлов и стриминг медиа)
-- **Связанный пункт чек-листа:** `2.5. Превью файлов`
-- **Проявление:**
-  - При скачивании/просмотре любого файла через `GET /api/v1/files/download/{id}` сервер безусловно устанавливает `Content-Type: application/octet-stream`. Из-за этого браузер не может отрендерить текстовые файлы, изображения и медиа в тегах `<img>`, `<video>` или `<audio>`, а скачивает их как бинарники.
-  - При отправке заголовка `Range: bytes=0-10` сервер возвращает `200 OK` и всё тело целиком, вместо `206 Partial Content`, `Accept-Ranges: bytes` и `Content-Range`. Это ломает перемотку и стриминг видео/аудио в HTML5-плеере.
-- **План исправления:**
-  - Реализовать определение MIME-типа по расширению файла (через `mime.TypeByExtension`) или содержимому, с fallback на `application/octet-stream`.
-  - Использовать `http.ServeContent` вместо `io.Copy(w, f)` для автоматической и стандартизированной поддержки Range-запросов (206 Partial Content), ETag и If-Modified-Since.
+### ✅ BUG-4 (fix-mime-range-and-csrf-bugs-4-5, 2026-09-14): 2.5. Превью файлов: отсутствие детекции MIME-типов и поддержки Range-запросов (206 Partial Content)
 
 ---
 
-### 🟡 BUG-5: CSRF Origin Mismatch в Nginx Reverse Proxy при обращении через нестандартный порт (32214)
-- **Компонент:** Nginx Reverse Proxy (`services/web-frontend/nginx.conf:42, 53`)
-- **Серьёзность:** High / Security & Auth (Блокировка отправки форм из браузера)
-- **Проявление:**
-  - Браузер при запросах на `http://localhost:32214` шлет заголовок `Origin: http://localhost:32214`.
-  - В `nginx.conf` настроено `proxy_set_header X-Forwarded-Host $host;`. Переменная `$host` в Nginx не содержит порт хоста.
-  - Мидлварь `RequireSameOrigin` в Go сравнивает `u.Host` (`localhost:32214`) с `X-Forwarded-Host` (`localhost`) и возвращает `HTTP 403 Forbidden` (`{"error": "CSRF origin mismatch"}`).
-- **План исправления:**
-  - В `services/web-frontend/nginx.conf` заменить `$host` в заголовках `Host` и `X-Forwarded-Host` на `$http_host` (который сохраняет оригинальный порт клиента), либо добавить поддержку порта в Go middleware.
+### ✅ BUG-5 (fix-mime-range-and-csrf-bugs-4-5, 2026-09-14): CSRF Origin Mismatch в Nginx Reverse Proxy при обращении через нестандартный порт (32214)
 
 ---
 

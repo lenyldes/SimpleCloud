@@ -63,11 +63,11 @@ The storage service SHALL verify on startup that the configured base storage dir
 - **THEN** the service logs a clear diagnostic error indicating the permission failure and halts startup before binding network listeners.
 
 ### Requirement: File Download and Metadata Listing
-The system SHALL stream stored binary files via `GET /api/v1/files/download/:id` with appropriate HTTP headers (`Content-Disposition`, `Content-Type`, `Content-Length`), and return a JSON list of all uploaded files via `GET /api/v1/files`. Both operations SHALL resolve file metadata exclusively from PostgreSQL and enforce ownership: a file record that does not exist or belongs to another user SHALL be indistinguishable and answered with HTTP 404. The `:id` path segment SHALL be validated as a UUID before any lookup. The `Content-Disposition` header SHALL carry both an ASCII-safe fallback `filename` and an RFC 5987 `filename*` (`UTF-8''<percent-encoded>`) value so non-ASCII (e.g. Cyrillic) filenames download with correct names, and the header values SHALL be sanitized so filename characters (`\r`, `\n`, `"`) cannot inject additional headers.
+The system SHALL stream stored binary files via `GET /api/v1/files/download/:id` with appropriate HTTP headers (`Content-Disposition`, `Content-Type`, `Content-Length`, `Accept-Ranges: bytes`), and return a JSON list of all uploaded files via `GET /api/v1/files`. Both operations SHALL resolve file metadata exclusively from PostgreSQL and enforce ownership: a file record that does not exist or belongs to another user SHALL be indistinguishable and answered with HTTP 404. The `:id` path segment SHALL be validated as a UUID before any lookup. The `Content-Disposition` header SHALL carry both an ASCII-safe fallback `filename` and an RFC 5987 `filename*` (`UTF-8''<percent-encoded>`) value so non-ASCII (e.g. Cyrillic) filenames download with correct names, and the header values SHALL be sanitized so filename characters (`\r`, `\n`, `"`) cannot inject additional headers. The system SHALL dynamically detect the `Content-Type` header based on the file extension (with fallback to `application/octet-stream`), and SHALL support HTTP Range requests returning `206 Partial Content` with `Content-Range` headers for media streaming and chunked downloads.
 
 #### Scenario: Successful file download
 - **WHEN** a request is received from the owner for an existing file ID via `GET /api/v1/files/download/:id`
-- **THEN** the system streams the binary file content with HTTP 200 OK and accurate header metadata.
+- **THEN** the system streams the binary file content with HTTP 200 OK, accurate detected Content-Type, and Content-Disposition header metadata.
 
 #### Scenario: File not found download
 - **WHEN** a request is received for a non-existent file ID via `GET /api/v1/files/download/:id`
@@ -96,6 +96,14 @@ The system SHALL stream stored binary files via `GET /api/v1/files/download/:id`
 #### Scenario: Filename cannot inject headers
 - **WHEN** a file's stored name contains CR/LF or double-quote characters
 - **THEN** the `Content-Disposition` header SHALL be sanitized so no additional header lines or unescaped quotes are produced.
+
+#### Scenario: Dynamic MIME type detection
+- **WHEN** a user downloads an image (e.g. `.png`), video (e.g. `.mp4`), or document (e.g. `.txt`, `.pdf`)
+- **THEN** the system SHALL set `Content-Type` matching the file format instead of unconditionally sending `application/octet-stream`.
+
+#### Scenario: HTTP Range request returns 206 Partial Content
+- **WHEN** a client sends `GET /api/v1/files/download/:id` with header `Range: bytes=0-10`
+- **THEN** the system SHALL respond with `206 Partial Content`, `Content-Range: bytes 0-10/<total>`, `Accept-Ranges: bytes`, and the exact byte range requested.
 
 ### Requirement: Folder-Scoped Upload and Folder ID Binding
 The system SHALL accept optional `folder_id` in form data during `POST /api/v1/files/upload`, binding uploaded files to the specified parent folder in PostgreSQL.
