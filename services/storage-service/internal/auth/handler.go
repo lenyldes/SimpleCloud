@@ -49,11 +49,15 @@ func RequireSameOrigin(next http.Handler) http.Handler {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid origin header"})
 				return
 			}
-			expectedHost := r.Header.Get("X-Forwarded-Host")
+			expectedHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
 			if expectedHost == "" {
-				expectedHost = r.Host
+				expectedHost = strings.TrimSpace(r.Host)
 			}
-			if !strings.EqualFold(u.Host, expectedHost) {
+			matched := strings.EqualFold(u.Host, expectedHost)
+			if !matched && !strings.Contains(expectedHost, ":") {
+				matched = strings.EqualFold(u.Hostname(), expectedHost)
+			}
+			if !matched {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "CSRF origin mismatch"})

@@ -3,7 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,6 +14,29 @@ import (
 
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
 )
+
+func init() {
+	_ = mime.AddExtensionType(".mp4", "video/mp4")
+	_ = mime.AddExtensionType(".m4v", "video/x-m4v")
+	_ = mime.AddExtensionType(".webm", "video/webm")
+	_ = mime.AddExtensionType(".mkv", "video/x-matroska")
+	_ = mime.AddExtensionType(".avi", "video/x-msvideo")
+	_ = mime.AddExtensionType(".mp3", "audio/mpeg")
+	_ = mime.AddExtensionType(".ogg", "audio/ogg")
+	_ = mime.AddExtensionType(".wav", "audio/wav")
+	_ = mime.AddExtensionType(".flac", "audio/flac")
+	_ = mime.AddExtensionType(".aac", "audio/aac")
+	_ = mime.AddExtensionType(".txt", "text/plain; charset=utf-8")
+	_ = mime.AddExtensionType(".pdf", "application/pdf")
+	_ = mime.AddExtensionType(".json", "application/json")
+	_ = mime.AddExtensionType(".csv", "text/csv; charset=utf-8")
+	_ = mime.AddExtensionType(".png", "image/png")
+	_ = mime.AddExtensionType(".jpg", "image/jpeg")
+	_ = mime.AddExtensionType(".jpeg", "image/jpeg")
+	_ = mime.AddExtensionType(".gif", "image/gif")
+	_ = mime.AddExtensionType(".webp", "image/webp")
+	_ = mime.AddExtensionType(".svg", "image/svg+xml")
+}
 
 // DownloadHandler handles GET /api/v1/files/download/:id
 func (fh *FileHandler) DownloadHandler(w http.ResponseWriter, r *http.Request) {
@@ -88,12 +111,14 @@ func (fh *FileHandler) DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	contentType := mime.TypeByExtension(filepath.Ext(filename))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", formatContentDisposition(filename))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
-	w.WriteHeader(http.StatusOK)
 
-	_, _ = io.Copy(w, f)
+	http.ServeContent(w, r, filename, stat.ModTime(), f)
 }
 
 // formatContentDisposition constructs Content-Disposition with RFC 5987 filename* UTF-8 encoding
