@@ -182,11 +182,17 @@ func TestUpload_MetadataPersistenceFailureRollsBackDisk(t *testing.T) {
 
 	userID := createTestUser(t, pool, 10*1024*1024)
 
-	// Filename exceeding VARCHAR(512) forces the files INSERT to fail at DB
-	// level AFTER the binary was written to disk — exercising the
-	// os.Remove + rollback + 500 path required by the spec.
-	longFilename := strings.Repeat("a", 600) + ".txt"
-	rr := uploadTestFile(t, fh, userID, longFilename, []byte("written then rolled back"), "")
+	// Force files INSERT to fail at DB level AFTER the binary was written to disk
+	// using a CHECK constraint, exercising the os.Remove + rollback + 500 path.
+	_, err := pool.Exec(context.Background(), `ALTER TABLE files ADD CONSTRAINT test_force_meta_fail CHECK (filename != 'fail_meta.txt')`)
+	if err != nil {
+		t.Fatalf("failed to add constraint: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `ALTER TABLE files DROP CONSTRAINT IF EXISTS test_force_meta_fail`)
+	})
+
+	rr := uploadTestFile(t, fh, userID, "fail_meta.txt", []byte("written then rolled back"), "")
 
 	if rr.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 when metadata persistence fails, got %d", rr.Code)
