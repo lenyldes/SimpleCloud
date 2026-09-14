@@ -184,6 +184,11 @@ func TestWebFrontendConfirmDeleteModalStructure(t *testing.T) {
 		{"Confirm Delete Message Container", `id="confirm-delete-msg"`},
 		{"Confirm Delete Cancel Button", `id="confirm-delete-cancel"`},
 		{"Confirm Delete Action Button", `id="confirm-delete-btn"`},
+		{"Confirm Delete Modal Role Dialog", `role="dialog"`},
+		{"Confirm Delete Modal Aria Modal", `aria-modal="true"`},
+		{"Confirm Delete Modal Aria Labelledby", `aria-labelledby="confirm-delete-title"`},
+		{"Confirm Delete Target Name Container", `confirm-delete-target-name`},
+		{"Confirm Delete Folder Warning Container", `confirm-delete-folder-warning`},
 	}
 
 	for _, elem := range requiredElements {
@@ -209,6 +214,7 @@ func TestWebFrontendDeleteButtonStyles(t *testing.T) {
 		"#modal-confirm-delete",
 		".btn-danger",
 		".btn-icon-danger",
+		".confirm-delete-folder-warning",
 	}
 
 	for _, token := range requiredTokens {
@@ -221,7 +227,14 @@ func TestWebFrontendDeleteButtonStyles(t *testing.T) {
 }
 
 func TestWebFrontendDeleteLogicJS(t *testing.T) {
-	content := readAllFrontendJS(t)
+	repoRoot := findRepoRoot(t)
+	modalsPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "js", "modals.js")
+
+	contentBytes, err := os.ReadFile(modalsPath)
+	if err != nil {
+		t.Fatalf("failed to read modals.js: %v", err)
+	}
+	content := string(contentBytes)
 
 	requiredLogicTokens := []struct {
 		name  string
@@ -229,15 +242,75 @@ func TestWebFrontendDeleteLogicJS(t *testing.T) {
 	}{
 		{"Open Confirm Delete Modal Function", "openConfirmDeleteModal"},
 		{"Close Confirm Delete Modal Function", "closeConfirmDeleteModal"},
-		{"Delete File API Invocation", "apiDeleteFile"},
-		{"Delete Folder API Invocation", "apiDeleteFolder"},
+		{"Delete File Invocation", "deleteFile"},
+		{"Delete Folder Invocation", "deleteFolder"},
+		{"Cancel Button Safe Focus", "cancelBtn.focus()"},
+		{"In-Flight Deletion Lock", "isDeleting"},
+		{"Target Name Safe TextContent Assignment", "textContent"},
 	}
 
 	for _, elem := range requiredLogicTokens {
 		t.Run(elem.name, func(t *testing.T) {
 			if !strings.Contains(content, elem.token) {
-				t.Errorf("JavaScript modules missing required frontend delete logic %s (expected token %q)", elem.name, elem.token)
+				t.Errorf("modals.js missing required frontend delete logic %s (expected token %q)", elem.name, elem.token)
 			}
 		})
 	}
+}
+
+func TestWebFrontendWorkspaceQuotaAndEscapeSync(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+	appPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "js", "app.js")
+	modalsPath := filepath.Join(repoRoot, "services", "web-frontend", "src", "js", "modals.js")
+
+	appBytes, err := os.ReadFile(appPath)
+	if err != nil {
+		t.Fatalf("failed to read app.js: %v", err)
+	}
+	appContent := string(appBytes)
+
+	modalsBytes, err := os.ReadFile(modalsPath)
+	if err != nil {
+		t.Fatalf("failed to read modals.js: %v", err)
+	}
+	modalsContent := string(modalsBytes)
+
+	t.Run("Quota Refresh via checkAuth in loadWorkspaceData", func(t *testing.T) {
+		loadWorkspaceStart := strings.Index(appContent, "function loadWorkspaceData")
+		if loadWorkspaceStart == -1 {
+			t.Fatalf("app.js missing loadWorkspaceData function definition")
+		}
+		end := loadWorkspaceStart + 400
+		if end > len(appContent) {
+			end = len(appContent)
+		}
+		loadWorkspaceBody := appContent[loadWorkspaceStart:end]
+		if !strings.Contains(loadWorkspaceBody, "checkAuth") {
+			t.Errorf("loadWorkspaceData in app.js missing checkAuth invocation for quota refresh")
+		}
+	})
+
+	t.Run("Escape Key Dismissal in Keydown Listener", func(t *testing.T) {
+		escapeIdx := strings.Index(appContent, "'Escape'")
+		if escapeIdx == -1 {
+			escapeIdx = strings.Index(appContent, `"Escape"`)
+		}
+		if escapeIdx == -1 {
+			t.Fatalf("app.js missing Escape keydown handler")
+		}
+		end := escapeIdx + 300
+		if end > len(appContent) {
+			end = len(appContent)
+		}
+		escapeBody := appContent[escapeIdx:end]
+		if !strings.Contains(escapeBody, "closeTopModal") {
+			t.Errorf("Escape keydown handler in app.js does not call closeTopModal to dismiss active modals")
+		}
+	})
+
+	t.Run("Centralized closeTopModal Implementation in modals.js", func(t *testing.T) {
+		if !strings.Contains(modalsContent, "closeTopModal") {
+			t.Errorf("modals.js missing centralized closeTopModal function implementation")
+		}
+	})
 }

@@ -2,11 +2,11 @@
 
 ## 1. Automated Tests (RED State) - [TEST-AGENT]
 
-- [ ] 1.1 Extend `TestWebFrontendConfirmDeleteModalStructure` in `services/storage-service/internal/handler/web_test.go` to assert `role="dialog"`, `aria-modal="true"`, `aria-labelledby="confirm-delete-title"`, `confirm-delete-target-name`, and `confirm-delete-folder-warning`.
-- [ ] 1.2 Extend `TestWebFrontendDeleteButtonStyles` in `services/storage-service/internal/handler/web_test.go` to verify `.confirm-delete-folder-warning` class presence in `css/modals.css`.
-- [ ] 1.3 Update `TestWebFrontendDeleteLogicJS` in `services/storage-service/internal/handler/web_test.go` to assert `textContent`, `cancelBtn.focus()`, `isDeleting`, and actual invocations of `deleteFile` and `deleteFolder`.
-- [ ] 1.4 Add test in `services/storage-service/internal/handler/web_test.go` asserting that `loadWorkspaceData` re-fetches user profile via `checkAuth` to synchronize quota, and that `Escape` key handler dismisses active modals.
-- [ ] 1.5 Run `go test ./...` in `services/storage-service` and verify new tests fail as expected (RED state).
+- [x] 1.1 Extend `TestWebFrontendConfirmDeleteModalStructure` in `services/storage-service/internal/handler/web_test.go` to assert `role="dialog"`, `aria-modal="true"`, `aria-labelledby="confirm-delete-title"`, `confirm-delete-target-name`, and `confirm-delete-folder-warning`.
+- [x] 1.2 Extend `TestWebFrontendDeleteButtonStyles` in `services/storage-service/internal/handler/web_test.go` to verify `.confirm-delete-folder-warning` class presence in `css/modals.css`.
+- [x] 1.3 Update `TestWebFrontendDeleteLogicJS` in `services/storage-service/internal/handler/web_test.go` to assert `textContent`, `cancelBtn.focus()`, `isDeleting`, and actual invocations of `deleteFile` and `deleteFolder`.
+- [x] 1.4 Add test in `services/storage-service/internal/handler/web_test.go` asserting that `loadWorkspaceData` re-fetches user profile via `checkAuth` to synchronize quota, and that `Escape` key handler dismisses active modals.
+- [x] 1.5 Run `go test ./...` in `services/storage-service` and verify new tests fail as expected (RED state).
 
 ## 2. Implementation (GREEN State) - [CODE-AGENT]
 
