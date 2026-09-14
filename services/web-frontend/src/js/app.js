@@ -121,7 +121,7 @@ async function handleRoute(force = false) {
     if (!exists) {
       showToast('Folder not found or access denied', 'danger');
       state.currentFolderId = null;
-      activeRouteFolderId = null;
+      activeRouteFolderId = targetFolderId;
       window.location.hash = '#/';
       return;
     }
@@ -136,6 +136,9 @@ async function handleRoute(force = false) {
 }
 if (typeof window !== 'undefined') {
   window.handleRoute = handleRoute;
+  if (window.addEventListener) {
+    window.addEventListener('hashchange', handleRoute);
+  }
 }
 
 /**
@@ -235,7 +238,6 @@ function setupDragAndDrop() {
  */
 function setupEventListeners() {
   setupDragAndDrop();
-  window.addEventListener('hashchange', handleRoute);
 
   // Cached DOM elements
   const searchInput = document.getElementById('search-input');

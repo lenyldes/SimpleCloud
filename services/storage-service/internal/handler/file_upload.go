@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
@@ -110,9 +111,15 @@ func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
 			parsed, userID,
 		).Scan(&dummy)
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "folder not found"})
+			if errors.Is(err, pgx.ErrNoRows) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "folder not found"})
+			} else {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to verify folder"})
+			}
 			return
 		}
 		folderUUID = &parsed

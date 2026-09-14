@@ -75,6 +75,14 @@ func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 		writeFolderJSONError(w, http.StatusBadRequest, "folder name cannot be empty")
 		return
 	}
+	if len(trimmedName) > 255 {
+		writeFolderJSONError(w, http.StatusBadRequest, "folder name cannot exceed 255 characters")
+		return
+	}
+	if strings.Contains(trimmedName, "/") || strings.Contains(trimmedName, "\\") || strings.Contains(trimmedName, "..") {
+		writeFolderJSONError(w, http.StatusBadRequest, "folder name cannot contain path traversal or slashes")
+		return
+	}
 
 	var parentUUID *uuid.UUID
 	if req.ParentID != nil && *req.ParentID != "" {
@@ -92,7 +100,11 @@ func (fh *FolderHandler) CreateHandler(w http.ResponseWriter, r *http.Request) {
 				parsed, userID,
 			).Scan(&dummy)
 			if err != nil {
-				writeFolderJSONError(w, http.StatusNotFound, "parent folder not found")
+				if errors.Is(err, pgx.ErrNoRows) {
+					writeFolderJSONError(w, http.StatusNotFound, "parent folder not found")
+				} else {
+					writeFolderJSONError(w, http.StatusInternalServerError, "failed to verify parent folder")
+				}
 				return
 			}
 		}
