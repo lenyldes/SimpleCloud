@@ -188,8 +188,44 @@ async function handleFileClick(file) {
   }
 }
 
-// Module state for pending item to delete
+/**
+ * Close top active modal dialog on Escape key press.
+ * @returns {boolean} Whether an active modal was closed
+ */
+function closeTopModal() {
+  const modalConfirmDelete = document.getElementById('modal-confirm-delete');
+  const modalNewFolder = document.getElementById('modal-new-folder');
+  const modalLightbox = document.getElementById('modal-lightbox');
+  const modalText = document.getElementById('modal-text');
+  const modalVideo = document.getElementById('modal-video');
+
+  if (modalConfirmDelete && modalConfirmDelete.classList.contains('open')) {
+    if (isDeleting) return false;
+    closeConfirmDeleteModal();
+    return true;
+  }
+  if (modalNewFolder && modalNewFolder.classList.contains('open')) {
+    closeNewFolderModal();
+    return true;
+  }
+  if (modalLightbox && modalLightbox.classList.contains('open')) {
+    closeLightbox();
+    return true;
+  }
+  if (modalText && modalText.classList.contains('open')) {
+    closeTextViewer();
+    return true;
+  }
+  if (modalVideo && modalVideo.classList.contains('open')) {
+    closeVideoPlayer();
+    return true;
+  }
+  return false;
+}
+
+// Module state for pending item to delete and in-flight request lock
 let pendingDeleteItem = null;
+let isDeleting = false;
 
 /**
  * Open confirmation modal to delete a file or folder.
@@ -201,26 +237,34 @@ function openConfirmDeleteModal(id, type, name) {
   pendingDeleteItem = { id, type, name };
   const modal = document.getElementById('modal-confirm-delete');
   const title = document.getElementById('confirm-delete-title');
-  const msg = document.getElementById('confirm-delete-msg');
-  const safeName = typeof escapeHtml === 'function' ? escapeHtml(name) : name;
+  const targetNameEl = document.getElementById('confirm-delete-target-name');
+  const folderWarningEl = document.getElementById('confirm-delete-folder-warning');
+  const cancelBtn = document.getElementById('confirm-delete-cancel');
 
   if (title) {
     title.textContent = type === 'folder' ? 'Delete Folder' : 'Delete File';
   }
-  if (msg) {
+  if (targetNameEl) {
+    targetNameEl.textContent = name;
+  }
+  if (folderWarningEl) {
     if (type === 'folder') {
-      msg.innerHTML = `Are you sure you want to delete <strong>${safeName}</strong>?<br><span style="color: var(--color-danger); font-size: var(--font-size-sm); display: inline-block; margin-top: 8px;">Warning: This will permanently delete the folder and all its contents.</span>`;
+      folderWarningEl.classList.remove('hidden');
     } else {
-      msg.innerHTML = `Are you sure you want to delete <strong>${safeName}</strong>?`;
+      folderWarningEl.classList.add('hidden');
     }
   }
   openModal(modal);
+  if (cancelBtn) {
+    cancelBtn.focus();
+  }
 }
 
 /**
  * Close confirmation modal for delete and clear pending item.
  */
 function closeConfirmDeleteModal() {
+  if (isDeleting) return;
   const modal = document.getElementById('modal-confirm-delete');
   closeModal(modal);
   pendingDeleteItem = null;
@@ -233,4 +277,63 @@ function closeConfirmDeleteModal() {
 function getPendingDeleteItem() {
   return pendingDeleteItem;
 }
+
+/**
+ * Handle confirmation of file or folder deletion.
+ */
+async function handleConfirmDelete() {
+  if (isDeleting) return;
+  const item = typeof getPendingDeleteItem === 'function' ? getPendingDeleteItem() : pendingDeleteItem;
+  if (!item || !item.id) {
+    closeConfirmDeleteModal();
+    return;
+  }
+
+  const { id, type, name } = item;
+  const isFolder = type === 'folder';
+  const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+  const confirmDeleteCancel = document.getElementById('confirm-delete-cancel');
+  const confirmDeleteClose = document.getElementById('confirm-delete-close');
+
+  isDeleting = true;
+  if (confirmDeleteBtn) {
+    confirmDeleteBtn.disabled = true;
+    confirmDeleteBtn.textContent = 'Deleting...';
+  }
+  if (confirmDeleteCancel) confirmDeleteCancel.disabled = true;
+  if (confirmDeleteClose) confirmDeleteClose.disabled = true;
+
+  try {
+    const res = isFolder
+      ? (window.api && window.api.deleteFolder ? await window.api.deleteFolder(id) : await fetchWithAuth(`/api/v1/folders/${encodeURIComponent(id)}`, { method: 'DELETE' }))
+      : (window.api && window.api.deleteFile ? await window.api.deleteFile(id) : await fetchWithAuth(`/api/v1/files/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+
+    if (res && res.ok) {
+      isDeleting = false;
+      closeConfirmDeleteModal();
+      if (typeof showToast === 'function') showToast(`${isFolder ? 'Folder' : 'File'} "${name}" deleted successfully`, 'success');
+      if (typeof loadWorkspaceData === 'function') await loadWorkspaceData();
+    } else {
+      const errData = res ? await res.json().catch(() => ({})) : {};
+      if (typeof showToast === 'function') showToast(errData.error || `Failed to delete ${isFolder ? 'folder' : 'file'}`, 'danger');
+    }
+  } catch (err) {
+    console.error('Delete error:', err);
+    if (typeof showToast === 'function') showToast(`Failed to delete ${isFolder ? 'folder' : 'file'}`, 'danger');
+  } finally {
+    isDeleting = false;
+    if (confirmDeleteBtn) {
+      confirmDeleteBtn.disabled = false;
+      confirmDeleteBtn.textContent = 'Delete';
+    }
+    if (confirmDeleteCancel) confirmDeleteCancel.disabled = false;
+    if (confirmDeleteClose) confirmDeleteClose.disabled = false;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.closeTopModal = closeTopModal;
+  window.handleConfirmDelete = handleConfirmDelete;
+}
+
 

@@ -254,18 +254,23 @@
 </div>
 
 <!-- Confirm Delete Modal -->
-<div id="modal-confirm-delete" class="modal-backdrop hidden">
+<div id="modal-confirm-delete" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-delete-title">
   <div class="modal-dialog" style="max-width: 440px;">
     <div class="modal-header">
       <div class="modal-title" id="confirm-delete-title">Delete Item</div>
-      <button class="btn-icon" id="confirm-delete-close">✕</button>
+      <button type="button" class="btn-icon" id="confirm-delete-close">✕</button>
     </div>
     <div class="modal-body">
-      <div id="confirm-delete-msg" class="confirm-delete-msg"></div>
+      <div id="confirm-delete-msg" class="confirm-delete-msg">
+        Are you sure you want to delete <strong id="confirm-delete-target-name"></strong>?
+        <div id="confirm-delete-folder-warning" class="confirm-delete-folder-warning hidden">
+          Warning: This will permanently delete the folder and all its contents.
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" id="confirm-delete-cancel">Cancel</button>
-      <button class="btn btn-danger" id="confirm-delete-btn">Delete</button>
+      <button type="button" class="btn btn-secondary" id="confirm-delete-cancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="confirm-delete-btn">Delete</button>
     </div>
   </div>
 </div>

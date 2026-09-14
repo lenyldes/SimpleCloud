@@ -226,4 +226,12 @@
   gap: 4px;
 }
 
-
+.confirm-delete-folder-warning {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background-color: var(--color-danger-light);
+  color: var(--color-danger);
+  border-radius: var(--border-radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}

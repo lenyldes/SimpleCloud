@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', init);
 async function loadWorkspaceData() {
   if (!state.user) return;
   activeRouteFolderId = state.currentFolderId;
-  await Promise.all([loadFiles(), loadFolders()]);
+  await Promise.all([checkAuth(), loadFiles(), loadFolders()]);
   updateQuotaDisplay();
   renderBreadcrumbs();
   renderWorkspace();
@@ -350,6 +350,9 @@ function setupEventListeners() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (typeof closeTopModal === 'function') {
+        closeTopModal();
+      }
       closeProfileDropdown();
     }
   });
@@ -395,49 +398,6 @@ function setupEventListeners() {
         }
       }
     });
-  }
-}
-
-/**
- * Handle confirmation of file or folder deletion.
- */
-async function handleConfirmDelete() {
-  const item = typeof getPendingDeleteItem === 'function' ? getPendingDeleteItem() : null;
-  if (!item || !item.id) {
-    if (typeof closeConfirmDeleteModal === 'function') closeConfirmDeleteModal();
-    return;
-  }
-
-  const { id, type, name } = item;
-  const isFolder = type === 'folder';
-  const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
-
-  if (confirmDeleteBtn) {
-    confirmDeleteBtn.disabled = true;
-    confirmDeleteBtn.textContent = 'Deleting...';
-  }
-
-  try {
-    const res = isFolder
-      ? (window.api && window.api.deleteFolder ? await window.api.deleteFolder(id) : await fetchWithAuth(`/api/v1/folders/${encodeURIComponent(id)}`, { method: 'DELETE' }))
-      : (window.api && window.api.deleteFile ? await window.api.deleteFile(id) : await fetchWithAuth(`/api/v1/files/${encodeURIComponent(id)}`, { method: 'DELETE' }));
-
-    if (res && res.ok) {
-      if (typeof closeConfirmDeleteModal === 'function') closeConfirmDeleteModal();
-      showToast(`${isFolder ? 'Folder' : 'File'} "${name}" deleted successfully`, 'success');
-      await loadWorkspaceData();
-    } else {
-      const errData = res ? await res.json().catch(() => ({})) : {};
-      showToast(errData.error || `Failed to delete ${isFolder ? 'folder' : 'file'}`, 'danger');
-    }
-  } catch (err) {
-    console.error('Delete error:', err);
-    showToast(`Failed to delete ${isFolder ? 'folder' : 'file'}`, 'danger');
-  } finally {
-    if (confirmDeleteBtn) {
-      confirmDeleteBtn.disabled = false;
-      confirmDeleteBtn.textContent = 'Delete';
-    }
   }
 }
 

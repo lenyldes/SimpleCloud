@@ -10,8 +10,8 @@
 
 ## 2. Implementation (GREEN State) - [CODE-AGENT]
 
-- [ ] 2.1 Update `services/web-frontend/src/index.html` with ARIA dialog attributes (`role="dialog"`, `aria-modal="true"`, `aria-labelledby`), explicit `type="button"` attributes, `#confirm-delete-target-name`, and `#confirm-delete-folder-warning`.
-- [ ] 2.2 Add `.confirm-delete-folder-warning` class in `services/web-frontend/src/css/modals.css` and verify styling.
-- [ ] 2.3 Update `services/web-frontend/src/js/modals.js`: implement `closeTopModal()`, safe focus on Cancel upon open, `textContent` assignment, `isDeleting` in-flight lock, and relocate `handleConfirmDelete()` into `modals.js`.
-- [ ] 2.4 Update `services/web-frontend/src/js/app.js`: remove `handleConfirmDelete()`, connect `Escape` key listener to `closeTopModal()`, and re-fetch user profile in `loadWorkspaceData()` via `Promise.all([checkAuth(), loadFiles(), loadFolders()])`.
-- [ ] 2.5 Run `go test ./...` in `services/storage-service`, verify all tests pass (GREEN state), and verify that `TestMaxFileLineCount` passes with `app.js` well under 450 lines.
+- [x] 2.1 Update `services/web-frontend/src/index.html` with ARIA dialog attributes (`role="dialog"`, `aria-modal="true"`, `aria-labelledby`), explicit `type="button"` attributes, `#confirm-delete-target-name`, and `#confirm-delete-folder-warning`.
+- [x] 2.2 Add `.confirm-delete-folder-warning` class in `services/web-frontend/src/css/modals.css` and verify styling.
+- [x] 2.3 Update `services/web-frontend/src/js/modals.js`: implement `closeTopModal()`, safe focus on Cancel upon open, `textContent` assignment, `isDeleting` in-flight lock, and relocate `handleConfirmDelete()` into `modals.js`.
+- [x] 2.4 Update `services/web-frontend/src/js/app.js`: remove `handleConfirmDelete()`, connect `Escape` key listener to `closeTopModal()`, and re-fetch user profile in `loadWorkspaceData()` via `Promise.all([checkAuth(), loadFiles(), loadFolders()])`.
+- [x] 2.5 Run `go test ./...` in `services/storage-service`, verify all tests pass (GREEN state), and verify that `TestMaxFileLineCount` passes with `app.js` well under 450 lines.
