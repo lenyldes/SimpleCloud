@@ -7,23 +7,31 @@ Provides core binary file storage on disk with subfolder sharding, PostgreSQL me
 ## Requirements
 
 ### Requirement: File Upload Streaming and Quota Enforcement
-The system SHALL accept binary file uploads via `POST /api/v1/files/upload`, calculate the SHA256 hash on-the-fly during upload, and check the user's available storage quota continuously. If the file upload exceeds the user's available quota, the system SHALL immediately abort the connection with HTTP status 413 Payload Too Large and delete any partially written temporary file from disk. After the binary content is stored, the system SHALL persist the file metadata record and increment the user's `used_bytes` atomically in PostgreSQL; if metadata persistence fails, the system SHALL delete the already written binary file from disk and return HTTP 500 instead of leaving an ownerless file.
+The system SHALL accept binary file uploads via `POST /api/v1/files/upload`, calculate the SHA256 hash on-the-fly during upload, and enforce user storage quota using a two-phase check. The upload filename SHALL NOT be empty and SHALL NOT exceed 255 characters; requests with invalid filenames SHALL be rejected immediately with HTTP status 400 Bad Request. File streaming and physical disk writing SHALL execute without holding an open database transaction. After the binary content is saved to disk, the system SHALL execute a short atomic database transaction (1-3 ms) that locks the user row, verifies remaining quota against the actual stored size, persists the file metadata record, and increments `used_bytes`. If the quota is exceeded or metadata persistence fails, the transaction SHALL be rolled back, the written binary file SHALL be removed from disk (with any deletion error logged), and an appropriate HTTP error (413 or 500) SHALL be returned.
 
 #### Scenario: Successful file upload
 - **WHEN** a user uploads a valid file within their available storage quota
-- **THEN** the system streams the file to the sharded disk path `/storage/<hash1>/<hash2>/<uuid>`, saves file metadata and SHA256 in PostgreSQL, updates the user's used storage bytes, and returns HTTP status 201 Created with file metadata JSON.
+- **THEN** the system streams the file to the sharded disk path `/storage/<hash1>/<hash2>/<uuid>` without holding a DB transaction, then commits metadata and increments `used_bytes` in a short transaction, returning HTTP status 201 Created with file metadata JSON.
 
 #### Scenario: File upload exceeds user storage quota
-- **WHEN** a user attempts to upload a file whose size exceeds their remaining storage quota
-- **THEN** the system immediately aborts the upload stream with HTTP status 413 Payload Too Large, cleans up any temporary file fragment from disk, and leaves the user's storage quota unchanged in PostgreSQL.
+- **WHEN** a user attempts to upload a file whose size exceeds their remaining storage quota (either before streaming or upon final atomic transaction verification)
+- **THEN** the system aborts the upload or rolls back the transaction, cleans up any physical file written to disk, and returns HTTP status 413 Payload Too Large without modifying `used_bytes`.
 
 #### Scenario: Metadata persistence failure rolls back disk write
 - **WHEN** the binary file was written to disk but the metadata/quota database commit fails
-- **THEN** the system deletes the written binary file from disk, returns HTTP 500, and leaves `used_bytes` unchanged.
+- **THEN** the system rolls back the database transaction, removes the written binary file from disk with error logging if removal fails, returns HTTP 500, and leaves `used_bytes` unchanged.
 
 #### Scenario: Metadata survives service restart
 - **WHEN** the storage service is restarted after a successful upload
 - **THEN** the uploaded file remains visible in the owner's file list and downloadable, because metadata is read from PostgreSQL and not from process memory.
+
+#### Scenario: Filename exceeds 255 characters
+- **WHEN** an authenticated user attempts to upload a file whose filename is longer than 255 characters
+- **THEN** the system rejects the request with HTTP status 400 Bad Request and an error message indicating filename length limit exceeded, without writing files or modifying database records.
+
+#### Scenario: Filename is empty
+- **WHEN** an authenticated user attempts to upload a file with an empty filename
+- **THEN** the system rejects the request with HTTP status 400 Bad Request.
 
 ### Requirement: Resource ID UUID Validation
 All file and folder endpoints that accept an identifier in the URL path (file download, file deletion, folder deletion) SHALL parse the identifier as a UUID before any filesystem or database access. Requests with malformed identifiers SHALL be rejected with a 4xx client error without touching the filesystem.
@@ -113,11 +121,11 @@ The system SHALL accept optional `folder_id` in form data during `POST /api/v1/f
 - **THEN** system SHALL verify folder ownership and save file record with `folder_id = <valid_folder_id>` in PostgreSQL.
 
 ### Requirement: Backend Quota Calculation and 413 Payload Check
-The system SHALL check `users.used_bytes + incoming_content_length <= users.quota_bytes` before and during file upload streaming, comparing the incoming size against the user's REMAINING quota (`quota_bytes - used_bytes`) rather than the total quota. The quota check and the `used_bytes` increment SHALL execute within the same database transaction that locks the user row against concurrent updates.
+The system SHALL check `users.used_bytes + incoming_content_length <= users.quota_bytes` optimistically before and during file upload streaming, comparing incoming size against the user's remaining quota (`quota_bytes - used_bytes`). The final authoritative quota check and the `used_bytes` increment SHALL execute within a short atomic database transaction that locks the user row (`SELECT ... FOR UPDATE`) after disk writing completes, guaranteeing that concurrent uploads cannot exceed the quota while preventing long-held database locks during network I/O.
 
 #### Scenario: File upload exceeds quota boundary
 - **WHEN** user uploads a file where `used_bytes + incoming_size > quota_bytes`
-- **THEN** system SHALL abort streaming immediately, clean up any temporary file created, return `413 Payload Too Large`, and leave `used_bytes` unchanged.
+- **THEN** system SHALL abort streaming or roll back the final transaction, clean up any file created on disk, return `413 Payload Too Large`, and leave `used_bytes` unchanged.
 
 #### Scenario: Multiple uploads exhaust remaining quota cumulatively
 - **WHEN** a user with a 5 GB quota uploads files totaling 4 GB and then attempts a 2 GB upload
@@ -125,7 +133,7 @@ The system SHALL check `users.used_bytes + incoming_content_length <= users.quot
 
 #### Scenario: Concurrent uploads cannot overdraw quota
 - **WHEN** two concurrent uploads from the same user each fit the remaining quota alone but not together
-- **THEN** the user row locking ensures at most one succeeds and the sum of persisted `used_bytes` never exceeds `quota_bytes`.
+- **THEN** the row-level locking during the final atomic commit ensures at most one succeeds, while the second sees an exhausted quota, rolls back, cleans up its written file, and returns HTTP 413.
 
 ### Requirement: File Deletion and Quota Release
 The system SHALL support deleting a single file via `DELETE /api/v1/files/:id` for authenticated users. The system SHALL verify ownership via PostgreSQL (records of other users or non-existent records return HTTP 404), remove the binary file from physical disk storage, delete the metadata record, and decrement the user's `used_bytes` without ever letting it become negative.

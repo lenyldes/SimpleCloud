@@ -57,6 +57,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
   - [x] Nested Folder Navigation & Breadcrumbs Cache Sync (Part 10 of Phase 7): fixed BUG-8, BUG-9 in `fix-folder-navigation-bugs-8-9`.
   - [x] Dynamic MIME Type Detection, Range Requests & Reverse Proxy CSRF Port Preservation (Part 11 of Phase 7): fixed BUG-4, BUG-5 in `fix-mime-range-and-csrf-bugs-4-5`.
   - [x] Accessible Modals, Escape Dismissal, In-Flight Lock & Quota Auto-Refresh (Part 12 of Phase 7): fixed BUG-7 in `fix-modal-polish-and-quota-bug-7`.
+  - [x] Two-Phase Quota, 1-3 ms Upload Transactions & Input Sanitization (Part 13 of Phase 7): fixed BUG-10 in `fix-two-phase-quota-bug-10`.
   - [x] Guided User Manual Testing Protocol: `[ORCHESTRATOR-AGENT]` provides interactive step-by-step test instructions and report template for user feedback (`BUGS.md`).
   - [ ] User Bug Triage & Resolution: Implement targeted fixes for all user-reported UI/UX issues and edge cases (`BUGS.md`).
     - [x] BUG-1: Web UI Profile Menu & Logout button (`fix-logout-button`).
@@ -68,6 +69,7 @@ This document outlines the step-by-step master development plan for SimpleCloud.
     - [x] BUG-7 (Checklist 4.1.b, 4.2.b, 4.3.b, 6.3): Modal polish (Escape dismissal, in-flight request lock, safe focus, XSS protection, quota refresh) (`fix-modal-polish-and-quota-bug-7`).
     - [x] BUG-8 (Checklist 3.3): Nested subfolders visibility, URL routing & F5 reload recovery (`fix-folder-navigation-bugs-8-9`).
     - [x] BUG-9 (Checklist 3.4): Dynamic breadcrumbs and cache synchronization upon navigation (`fix-folder-navigation-bugs-8-9`).
+    - [x] BUG-10 (Checklist 2.1, 3.1, 4.3.a): Two-Phase Quota, short upload transaction (1-3 ms), filename & folder null-byte input sanitation (`fix-two-phase-quota-bug-10`).
   - [ ] Final v1.0 Release Verification: End-to-end audit and release build ready for production use.
 
 - [ ] **Phase 8: Future Extensions & Rich Media Features**
