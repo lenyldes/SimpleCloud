@@ -205,17 +205,15 @@ func TestWebNav_ClientURLHashRouter(t *testing.T) {
 	})
 
 	t.Run("safe redirect to root on invalid or foreign folder UUID", func(t *testing.T) {
-		hasRedirect := strings.Contains(appJS, "location.hash = '#/'") ||
-			strings.Contains(appJS, `location.hash = '#/'`) ||
-			strings.Contains(appJS, "location.hash = ''") ||
-			strings.Contains(appJS, `location.hash = '#'`)
-		if !hasRedirect {
-			t.Errorf("app.js must contain redirect resetting location.hash to root on invalid or foreign folder UUID")
+		body := extractFunctionBody(appJS, "handleRoute")
+		if body == "" {
+			t.Fatalf("app.js missing handleRoute function")
 		}
-
-		hasWarningToast := strings.Contains(appJS, "showToast")
-		if !hasWarningToast {
-			t.Errorf("app.js must call showToast when redirecting away from invalid or foreign folder")
+		if !strings.Contains(body, "showToast") {
+			t.Errorf("handleRoute must call showToast when redirecting away from invalid or foreign folder: got body:\n%s", body)
+		}
+		if !strings.Contains(body, "location.hash = '#/'") && !strings.Contains(body, "location.hash = ''") {
+			t.Errorf("handleRoute must reset location.hash on invalid or foreign folder: got body:\n%s", body)
 		}
 	})
 

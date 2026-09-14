@@ -173,8 +173,8 @@ func TestFolderHandler_BranchCoverage(t *testing.T) {
 		req = req.WithContext(auth.WithUserID(ctx, testUser))
 		rr := httptest.NewRecorder()
 		fh.DeleteHandler(rr, req)
-		if rr.Code != http.StatusInternalServerError && rr.Code != http.StatusNotFound {
-			t.Errorf("expected error code on canceled context delete, got %d", rr.Code)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500 when folder delete fails on canceled context, got %d", rr.Code)
 		}
 	})
 
