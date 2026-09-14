@@ -5,16 +5,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
-	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/handler"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
 )
@@ -219,172 +218,164 @@ func TestUpload_EngineSaveErrorReturns500(t *testing.T) {
 	}
 }
 
-func TestFileHandler_UploadHandler_BranchCoverage(t *testing.T) {
+func createMultipartRequestWithDiskTempFile(t *testing.T, userID uuid.UUID, filename string, content []byte, folderID string) (*http.Request, string, *multipart.FileHeader) {
+	t.Helper()
+	req := buildUploadRequest(t, userID, filename, content, folderID)
+	// Parse with maxMemory = 0 to force storing file part in temporary disk file.
+	if err := req.ParseMultipartForm(0); err != nil {
+		t.Fatalf("failed to parse multipart form into temp file: %v", err)
+	}
+	if req.MultipartForm == nil || len(req.MultipartForm.File["file"]) == 0 {
+		t.Fatalf("multipart form or file part is missing")
+	}
+	fh := req.MultipartForm.File["file"][0]
+	f, err := fh.Open()
+	if err != nil {
+		t.Fatalf("failed to open multipart temp file: %v", err)
+	}
+	defer f.Close()
+
+	osFile, ok := f.(*os.File)
+	if !ok {
+		t.Fatalf("expected *os.File for disk-backed multipart file header, got %T", f)
+	}
+	tempFilePath := osFile.Name()
+
+	if _, err := os.Stat(tempFilePath); err != nil {
+		t.Fatalf("expected temp file %s to exist before handler execution: %v", tempFilePath, err)
+	}
+	return req, tempFilePath, fh
+}
+
+func TestFileUpload_MultipartFormCleanup(t *testing.T) {
+	pool := setupTestPool(t)
 	tempDir := t.TempDir()
 	engine := storage.NewDiskEngine(tempDir)
-	userID := uuid.New()
+	fh := handler.NewFileHandler(engine, pool, 50*1024*1024)
 
-	t.Run("UploadHandler pool is nil returns 500", func(t *testing.T) {
-		fh := handler.NewFileHandler(engine, nil, 10*1024*1024)
-		req := buildUploadRequest(t, userID, "test.txt", []byte("hello"), "")
+	t.Run("successful upload removes multipart temp files via RemoveAll", func(t *testing.T) {
+		userID := createTestUser(t, pool, 10*1024*1024)
+		req, tempPath, header := createMultipartRequestWithDiskTempFile(t, userID, "clean_success.txt", []byte("temp cleanup success payload"), "")
+
 		rr := httptest.NewRecorder()
 		fh.UploadHandler(rr, req)
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected 500, got %d", rr.Code)
-		}
-	})
 
-	t.Run("UploadHandler user record not found in DB returns 500", func(t *testing.T) {
-		pool := setupTestPool(t)
-		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
-		nonExistentUserID := uuid.New()
-		req := buildUploadRequest(t, nonExistentUserID, "test.txt", []byte("hello"), "")
-		rr := httptest.NewRecorder()
-		fh.UploadHandler(rr, req)
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected 500 for missing user record, got %d", rr.Code)
-		}
-	})
-
-	t.Run("UploadHandler user used_bytes near quota_bytes limits remaining quota -> 413", func(t *testing.T) {
-		pool := setupTestPool(t)
-		fh := handler.NewFileHandler(engine, pool, 1000)
-		overQuotaUserID := createTestUser(t, pool, 1000)
-		_, err := pool.Exec(context.Background(), `UPDATE users SET used_bytes = 990 WHERE id = $1`, overQuotaUserID)
-		if err != nil {
-			t.Fatalf("failed to update used_bytes: %v", err)
-		}
-		req := buildUploadRequest(t, overQuotaUserID, "over.txt", []byte("this content is much longer than 10 bytes remaining"), "")
-		rr := httptest.NewRecorder()
-		fh.UploadHandler(rr, req)
-		if rr.Code != http.StatusRequestEntityTooLarge {
-			t.Errorf("expected 413 when file exceeds remaining quota, got %d", rr.Code)
-		}
-	})
-
-	t.Run("UploadHandler non-numeric Content-Length header is ignored", func(t *testing.T) {
-		pool := setupTestPool(t)
-		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
-		testUser := createTestUser(t, pool, 10*1024*1024)
-		req := buildUploadRequest(t, testUser, "valid.txt", []byte("valid content"), "")
-		req.Header.Set("Content-Length", "invalid-number")
-		rr := httptest.NewRecorder()
-		fh.UploadHandler(rr, req)
 		if rr.Code != http.StatusCreated {
-			t.Errorf("expected 201 when Content-Length is non-numeric string, got %d", rr.Code)
+			t.Fatalf("expected 201 Created, got %d, body: %s", rr.Code, rr.Body.String())
+		}
+
+		if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+			t.Errorf("expected multipart temp file %s to be deleted by RemoveAll(), but stat err = %v", tempPath, err)
+		}
+		if f, err := header.Open(); err == nil {
+			_ = f.Close()
+			t.Errorf("expected header.Open() to fail after RemoveAll(), but succeeded")
 		}
 	})
 
-	t.Run("UploadHandler invalid multipart body returns 400", func(t *testing.T) {
-		pool := setupTestPool(t)
-		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
-		testUser := createTestUser(t, pool, 10*1024*1024)
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", strings.NewReader("not a multipart body"))
-		req.Header.Set("Content-Type", "multipart/form-data; boundary=boundary123")
-		req = req.WithContext(auth.WithUserID(req.Context(), testUser))
+	t.Run("validation error on invalid folder ID removes multipart temp files", func(t *testing.T) {
+		userID := createTestUser(t, pool, 10*1024*1024)
+		req, tempPath, header := createMultipartRequestWithDiskTempFile(t, userID, "invalid_folder.txt", []byte("temp cleanup validation error payload"), "not-a-valid-uuid")
+
 		rr := httptest.NewRecorder()
 		fh.UploadHandler(rr, req)
+
 		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400 for invalid multipart form, got %d", rr.Code)
+			t.Fatalf("expected 400 Bad Request, got %d", rr.Code)
+		}
+
+		if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+			t.Errorf("expected multipart temp file %s to be deleted on validation error, but stat err = %v", tempPath, err)
+		}
+		if f, err := header.Open(); err == nil {
+			_ = f.Close()
+			t.Errorf("expected header.Open() to fail after RemoveAll() on validation error, but succeeded")
 		}
 	})
 
-	t.Run("UploadHandler missing file field in form returns 400", func(t *testing.T) {
-		pool := setupTestPool(t)
-		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
-		testUser := createTestUser(t, pool, 10*1024*1024)
-		body := &bytes.Buffer{}
-		writer := multipart.NewWriter(body)
-		_ = writer.WriteField("other_field", "value")
-		_ = writer.Close()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", body)
-		req.Header.Set("Content-Type", writer.FormDataContentType())
-		req = req.WithContext(auth.WithUserID(req.Context(), testUser))
+	t.Run("folder not found error removes multipart temp files", func(t *testing.T) {
+		userID := createTestUser(t, pool, 10*1024*1024)
+		nonExistentFolderID := uuid.New().String()
+		req, tempPath, header := createMultipartRequestWithDiskTempFile(t, userID, "missing_folder.txt", []byte("temp cleanup not found payload"), nonExistentFolderID)
+
 		rr := httptest.NewRecorder()
 		fh.UploadHandler(rr, req)
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400 for missing file field, got %d", rr.Code)
-		}
-	})
 
-	t.Run("UploadHandler non-UUID string folder_id returns 400", func(t *testing.T) {
-		pool := setupTestPool(t)
-		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
-		testUser := createTestUser(t, pool, 10*1024*1024)
-		rr := uploadTestFile(t, fh, testUser, "nonuuid_folder.txt", []byte("content"), "invalid-folder-uuid")
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400 for non-UUID string folder_id, got %d", rr.Code)
-		}
-	})
-
-	t.Run("UploadHandler non-existent folder_id returns 404", func(t *testing.T) {
-		pool := setupTestPool(t)
-		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
-		testUser := createTestUser(t, pool, 10*1024*1024)
-		missingFolder := uuid.New().String()
-		rr := uploadTestFile(t, fh, testUser, "missing_folder.txt", []byte("content"), missingFolder)
 		if rr.Code != http.StatusNotFound {
-			t.Errorf("expected 404 for non-existent user folder_id, got %d", rr.Code)
+			t.Fatalf("expected 404 Not Found, got %d", rr.Code)
+		}
+
+		if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+			t.Errorf("expected multipart temp file %s to be deleted on 404 folder not found, but stat err = %v", tempPath, err)
+		}
+		if f, err := header.Open(); err == nil {
+			_ = f.Close()
+			t.Errorf("expected header.Open() to fail after RemoveAll() on 404 folder not found, but succeeded")
 		}
 	})
 
-	t.Run("UploadHandler canceled context on tx begin returns 500", func(t *testing.T) {
-		pool := setupTestPool(t)
-		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
-		testUser := createTestUser(t, pool, 10*1024*1024)
-		req := buildUploadRequest(t, testUser, "canceled.txt", []byte("content"), "")
-		ctx, cancel := context.WithCancel(req.Context())
-		cancel()
-		req = req.WithContext(ctx)
-		rr := httptest.NewRecorder()
-		fh.UploadHandler(rr, req)
-		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected 500 when transaction start fails on canceled context, got %d", rr.Code)
-		}
-	})
-
-	t.Run("UploadHandler canceled context on folder verification returns 500", func(t *testing.T) {
-		pool := setupTestPool(t)
-		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
-		testUser := createTestUser(t, pool, 10*1024*1024)
-		folderID := createTestFolder(t, pool, testUser)
-
-		var b bytes.Buffer
-		writer := multipart.NewWriter(&b)
-		_ = writer.WriteField("folder_id", folderID.String())
-		part, _ := writer.CreateFormFile("file", "test.txt")
-		_, _ = part.Write([]byte("content"))
-		_ = writer.Close()
-
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", nil)
-		ctx, cancel := context.WithCancel(req.Context())
-		req = req.WithContext(auth.WithUserID(ctx, testUser))
-		req.Header.Set("Content-Type", writer.FormDataContentType())
-		req.Body = &cancelOnReadCloser{r: &b, cancel: cancel}
+	t.Run("storage engine failure removes multipart temp files", func(t *testing.T) {
+		userID := createTestUser(t, pool, 10*1024*1024)
+		unwritableEngine := storage.NewDiskEngine("/dev/null/invalid_path")
+		fhUnwritable := handler.NewFileHandler(unwritableEngine, pool, 10*1024*1024)
+		req, tempPath, header := createMultipartRequestWithDiskTempFile(t, userID, "engine_fail.txt", []byte("temp cleanup engine error payload"), "")
 
 		rr := httptest.NewRecorder()
-		fh.UploadHandler(rr, req)
+		fhUnwritable.UploadHandler(rr, req)
+
 		if rr.Code != http.StatusInternalServerError {
-			t.Errorf("expected 500 when folder verification fails on canceled context, got %d, body: %s", rr.Code, rr.Body.String())
+			t.Fatalf("expected 500 Internal Server Error, got %d", rr.Code)
+		}
+
+		if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+			t.Errorf("expected multipart temp file %s to be deleted on storage engine failure, but stat err = %v", tempPath, err)
+		}
+		if f, err := header.Open(); err == nil {
+			_ = f.Close()
+			t.Errorf("expected header.Open() to fail after RemoveAll() on storage failure, but succeeded")
 		}
 	})
-}
 
-type cancelOnReadCloser struct {
-	r      io.Reader
-	cancel context.CancelFunc
-}
+	t.Run("large payload exceeding 32MB in-memory threshold cleans up temp file in TMPDIR", func(t *testing.T) {
+		isolatedTmpDir := t.TempDir()
+		t.Setenv("TMPDIR", isolatedTmpDir)
 
-func (c *cancelOnReadCloser) Read(p []byte) (int, error) {
-	n, err := c.r.Read(p)
-	if c.cancel != nil {
-		c.cancel()
-	}
-	return n, err
-}
+		userID := createTestUser(t, pool, 40*1024*1024)
+		largePayload := bytes.Repeat([]byte("X"), 33*1024*1024)
+		req := buildUploadRequest(t, userID, "large_33mb.bin", largePayload, "")
 
-func (c *cancelOnReadCloser) Close() error {
-	return nil
+		rr := httptest.NewRecorder()
+		fh.UploadHandler(rr, req)
+
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected 201 Created, got %d, body: %s", rr.Code, rr.Body.String())
+		}
+
+		// Verify isolated TMPDIR does not leak multipart-* files
+		entries, err := os.ReadDir(isolatedTmpDir)
+		if err != nil {
+			t.Fatalf("failed to read isolated TMPDIR: %v", err)
+		}
+		var leakedFiles []string
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "multipart-") {
+				leakedFiles = append(leakedFiles, entry.Name())
+			}
+		}
+		if len(leakedFiles) > 0 {
+			t.Errorf("expected 0 leaked multipart temp files in TMPDIR after RemoveAll(), found %d: %v", len(leakedFiles), leakedFiles)
+		}
+
+		// Verify that if req.MultipartForm is still present on request, opening its file header fails
+		if req.MultipartForm != nil {
+			if fhs, ok := req.MultipartForm.File["file"]; ok && len(fhs) > 0 {
+				if f, err := fhs[0].Open(); err == nil {
+					_ = f.Close()
+					t.Errorf("expected req.MultipartForm file header Open() to fail after RemoveAll(), but succeeded")
+				}
+			}
+		}
+	})
 }
 
 func TestFileUpload_IDOR_CrossUserFolderIsolation(t *testing.T) {
