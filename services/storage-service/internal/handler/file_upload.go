@@ -18,6 +18,12 @@ import (
 
 // UploadHandler handles POST /api/v1/files/upload
 func (fh *FileHandler) UploadHandler(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
