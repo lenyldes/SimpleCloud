@@ -39,11 +39,21 @@ jobs:
           go-version-file: 'services/storage-service/go.mod'
           cache-dependency-path: 'services/storage-service/go.sum'
 
+      - name: Cache golangci-lint binary
+        id: cache-golangci-lint
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/golangci-lint
+          key: golangci-lint-binary-go1.25.0
+
+      - name: Install golangci-lint
+        if: steps.cache-golangci-lint.outputs.cache-hit != 'true'
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
-          install-mode: binary
+          install-mode: none
           working-directory: services/storage-service
 
   test:
