@@ -7,13 +7,23 @@ on:
       - '**.md'
       - 'docs/**'
       - 'openspec/**'
+      - '.agent/**'
+      - '.gitignore'
+      - 'design_ref/**'
   pull_request:
     branches: [ main ]
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - 'openspec/**'
+      - '.agent/**'
+      - '.gitignore'
+      - 'design_ref/**'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -27,17 +37,17 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: 'services/storage-service/go.mod'
+          cache-dependency-path: 'services/storage-service/go.sum'
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
-          install-mode: goinstall
+          install-mode: binary
           working-directory: services/storage-service
 
   test:
     name: Run Go Tests
-    needs: [lint]
     runs-on: ubuntu-latest
 
     services:
@@ -51,8 +61,8 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
+          --health-interval 2s
+          --health-timeout 2s
           --health-retries 5
 
     steps:
@@ -63,6 +73,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: 'services/storage-service/go.mod'
+          cache-dependency-path: 'services/storage-service/go.sum'
 
       - name: Run unit & integration tests with coverage
         working-directory: services/storage-service
