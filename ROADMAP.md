@@ -60,6 +60,8 @@ This document outlines the step-by-step master development plan for SimpleCloud.
     - [x] BUG-2: Upload button not triggering file upload (`fix-upload-button`).
     - [x] BUG-3: Drag-and-drop storage directory permission denied (`mkdir /storage/...: permission denied`) (`fix-storage-permissions`).
     - [x] BUG-6: Web UI File and Folder Delete Controls (`fix-ui-delete-controls-bug-6`).
+    - [x] BUG-8 (Checklist 3.3): Nested subfolders visibility, URL routing & F5 reload recovery (`fix-folder-navigation-bugs-8-9`).
+    - [x] BUG-9 (Checklist 3.4): Dynamic breadcrumbs and cache synchronization upon navigation (`fix-folder-navigation-bugs-8-9`).
   - [ ] Final v1.0 Release Verification: End-to-end audit and release build ready for production use.
 
 - [ ] **Phase 8: Future Extensions & Rich Media Features**
