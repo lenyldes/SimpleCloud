@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -341,6 +342,49 @@ func TestFileHandler_UploadHandler_BranchCoverage(t *testing.T) {
 			t.Errorf("expected 500 when transaction start fails on canceled context, got %d", rr.Code)
 		}
 	})
+
+	t.Run("UploadHandler canceled context on folder verification returns 500", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		folderID := createTestFolder(t, pool, testUser)
+
+		var b bytes.Buffer
+		writer := multipart.NewWriter(&b)
+		_ = writer.WriteField("folder_id", folderID.String())
+		part, _ := writer.CreateFormFile("file", "test.txt")
+		_, _ = part.Write([]byte("content"))
+		_ = writer.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", nil)
+		ctx, cancel := context.WithCancel(req.Context())
+		req = req.WithContext(auth.WithUserID(ctx, testUser))
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Body = &cancelOnReadCloser{r: &b, cancel: cancel}
+
+		rr := httptest.NewRecorder()
+		fh.UploadHandler(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500 when folder verification fails on canceled context, got %d, body: %s", rr.Code, rr.Body.String())
+		}
+	})
+}
+
+type cancelOnReadCloser struct {
+	r      io.Reader
+	cancel context.CancelFunc
+}
+
+func (c *cancelOnReadCloser) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	if c.cancel != nil {
+		c.cancel()
+	}
+	return n, err
+}
+
+func (c *cancelOnReadCloser) Close() error {
+	return nil
 }
 
 func TestFileUpload_IDOR_CrossUserFolderIsolation(t *testing.T) {

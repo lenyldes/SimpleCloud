@@ -46,6 +46,52 @@ func TestFolderHandler_BranchCoverage(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateHandler folder name validation rejects invalid characters and oversized names with 400", func(t *testing.T) {
+		fh := handler.NewFolderHandler(nil, engine)
+		invalidNames := []struct {
+			desc string
+			name string
+		}{
+			{"name exceeds 255 characters", strings.Repeat("a", 256)},
+			{"name contains forward slash", "sub/folder"},
+			{"name contains backward slash", "sub\\folder"},
+			{"name contains dot dot prefix", "../folder"},
+			{"name contains dot dot inside", "sub..folder"},
+			{"name contains dot dot suffix", "folder.."},
+		}
+
+		for _, tc := range invalidNames {
+			t.Run(tc.desc, func(t *testing.T) {
+				rr := createFolderRequest(fh, userID, map[string]interface{}{"name": tc.name})
+				if rr.Code != http.StatusBadRequest {
+					t.Errorf("expected 400 Bad Request for %s, got %d, body: %s", tc.desc, rr.Code, rr.Body.String())
+				}
+			})
+		}
+	})
+
+	t.Run("CreateHandler canceled context on parent_id verification returns 500", func(t *testing.T) {
+		pool := setupTestPool(t)
+		fh := handler.NewFolderHandler(pool, engine)
+		testUser := createTestUser(t, pool, 10*1024*1024)
+		parentID := uuid.New().String()
+
+		jsonBody, _ := json.Marshal(map[string]interface{}{
+			"name":      "SubFolderCanceled",
+			"parent_id": parentID,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/folders", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		ctx, cancel := context.WithCancel(req.Context())
+		cancel()
+		req = req.WithContext(auth.WithUserID(ctx, testUser))
+		rr := httptest.NewRecorder()
+		fh.CreateHandler(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500 when parent_id verification fails on canceled context, got %d, body: %s", rr.Code, rr.Body.String())
+		}
+	})
+
 	t.Run("ListHandler pool is nil returns empty list", func(t *testing.T) {
 		fh := handler.NewFolderHandler(nil, engine)
 		rr := listFoldersRequest(fh, userID, "/api/v1/folders")

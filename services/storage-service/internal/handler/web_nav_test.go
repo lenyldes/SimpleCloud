@@ -2,6 +2,7 @@ package handler_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -225,6 +226,101 @@ func TestWebNav_ClientURLHashRouter(t *testing.T) {
 
 		if !strings.Contains(body, "loadWorkspaceData") {
 			t.Errorf("handleRoute must invoke loadWorkspaceData: got body:\n%s", body)
+		}
+	})
+
+	t.Run("router redirect from invalid folder to root does not suppress loadWorkspaceData", func(t *testing.T) {
+		body := extractFunctionBody(appJS, "handleRoute")
+		if body == "" {
+			t.Fatalf("app.js missing handleRoute function")
+		}
+
+		// When redirecting due to !exists, setting activeRouteFolderId = null before window.location.hash = '#/'
+		// poisons the router cache: the subsequent handleRoute sees targetFolderId (null) == activeRouteFolderId (null),
+		// causing deduplication to suppress loadWorkspaceData() and leave the UI desynchronized.
+		// Verify that handleRoute does not prematurely reset activeRouteFolderId to null in its redirect branch.
+		if strings.Contains(body, "activeRouteFolderId = null") {
+			t.Errorf("handleRoute must not set activeRouteFolderId = null before redirecting; it causes router deduplication to falsely suppress loadWorkspaceData() on root redirect")
+		}
+
+		// Behavioral verification using node if available
+		nodePath, err := exec.LookPath("node")
+		if err != nil {
+			t.Log("node binary not found in PATH, skipping behavioral router execution")
+			return
+		}
+
+		nodeScript := `
+const fs = require("fs");
+const code = fs.readFileSync(process.argv[1], "utf8");
+
+let loadWorkspaceDataCalls = 0;
+let hashchangeHandler = null;
+
+const windowObj = {
+  location: {
+    _hash: "#/",
+    get hash() { return this._hash; },
+    set hash(val) {
+      this._hash = val;
+      if (hashchangeHandler) hashchangeHandler();
+    }
+  },
+  addEventListener: (evt, fn) => {
+    if (evt === "hashchange") hashchangeHandler = fn;
+  },
+  showToast: () => {},
+  api: {
+    listAllFolders: async () => ({ ok: true, json: async () => [] })
+  }
+};
+
+const sandbox = {
+  window: windowObj,
+  document: { addEventListener: () => {} },
+  showToast: () => {},
+  closeProfileDropdown: () => {},
+  setupEventListeners: () => {},
+  checkAuth: async () => {},
+  loadFiles: async () => {},
+  loadFolders: async () => {},
+  updateQuotaDisplay: () => {},
+  renderBreadcrumbs: () => {},
+  renderWorkspace: () => {},
+  console: { error: () => {}, log: () => {} }
+};
+
+const vm = require("vm");
+vm.createContext(sandbox);
+vm.runInContext(code, sandbox);
+
+const origLoadWorkspaceData = sandbox.loadWorkspaceData;
+sandbox.loadWorkspaceData = async () => {
+  loadWorkspaceDataCalls++;
+  if (origLoadWorkspaceData) return origLoadWorkspaceData();
+};
+
+(async () => {
+  sandbox.state.user = { id: "test-user" };
+  await sandbox.handleRoute(); // Initial load for root
+  const initialCalls = loadWorkspaceDataCalls;
+
+  // Navigate to non-existent folder
+  windowObj.location.hash = "#/folder/nonexistent-id-000";
+  if (hashchangeHandler) await hashchangeHandler();
+
+  if (loadWorkspaceDataCalls <= initialCalls) {
+    console.error("FAIL: loadWorkspaceData was suppressed during redirect to root");
+    process.exit(1);
+  }
+  process.exit(0);
+})();
+`
+		appJSPath := filepath.Join(findRepoRoot(t), "services", "web-frontend", "src", "js", "app.js")
+		cmd := exec.Command(nodePath, "-e", nodeScript, appJSPath)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Errorf("router redirect behavioral test failed (loadWorkspaceData suppressed by deduplication): %v, output: %s", err, string(out))
 		}
 	})
 }
