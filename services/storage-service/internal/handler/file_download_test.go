@@ -3,7 +3,10 @@ package handler_test
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"mime"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -12,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/auth"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/handler"
 	"github.com/RomanMischenko/SimpleCloud/services/storage-service/internal/storage"
 )
@@ -188,6 +192,134 @@ func TestFileDownload_ContentDispositionFormat(t *testing.T) {
 		cd := dlRR.Header().Get("Content-Disposition")
 		if strings.Contains(cd, "\r") || strings.Contains(cd, "\n") || strings.Contains(cd, `\"`) {
 			t.Errorf("Content-Disposition contains unsanitized CR, LF, or quotes: %q", cd)
+		}
+	})
+}
+
+func TestFileDownload_DynamicMimeType(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userID := createTestUser(t, pool, 10*1024*1024)
+
+	testCases := []struct {
+		filename     string
+		expectedMIME string
+	}{
+		{"image.png", "image/png"},
+		{"photo.jpg", "image/jpeg"},
+		{"movie.mp4", "video/mp4"},
+		{"notes.txt", "text/plain"},
+		{"config.json", "application/json"},
+		{"data.unknownext", "application/octet-stream"},
+		{"noextfile", "application/octet-stream"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.filename, func(t *testing.T) {
+			dummyContent := []byte("sample content for " + tc.filename)
+			rr := uploadTestFile(t, fh, userID, tc.filename, dummyContent, "")
+			if rr.Code != http.StatusCreated {
+				t.Fatalf("failed to upload %s: %d, body: %s", tc.filename, rr.Code, rr.Body.String())
+			}
+			meta := decodeFileMeta(t, rr)
+
+			dlRR := downloadFileRequest(fh, userID, meta.ID)
+			if dlRR.Code != http.StatusOK {
+				t.Fatalf("expected 200 OK for %s download, got %d", tc.filename, dlRR.Code)
+			}
+
+			rawContentType := dlRR.Header().Get("Content-Type")
+			mediaType, _, err := mime.ParseMediaType(rawContentType)
+			if err != nil {
+				t.Fatalf("failed to parse Content-Type %q: %v", rawContentType, err)
+			}
+
+			if mediaType != tc.expectedMIME {
+				t.Errorf("for filename %s: expected MIME %q, got %q (raw: %q)",
+					tc.filename, tc.expectedMIME, mediaType, rawContentType)
+			}
+		})
+	}
+}
+
+func TestFileDownload_RangeRequests(t *testing.T) {
+	pool := setupTestPool(t)
+	tempDir := t.TempDir()
+	engine := storage.NewDiskEngine(tempDir)
+	fh := handler.NewFileHandler(engine, pool, 10*1024*1024)
+
+	userID := createTestUser(t, pool, 10*1024*1024)
+
+	payload := []byte("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCD")
+	filename := "stream.mp4"
+
+	rr := uploadTestFile(t, fh, userID, filename, payload, "")
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("failed to upload file: %d, body: %s", rr.Code, rr.Body.String())
+	}
+	meta := decodeFileMeta(t, rr)
+
+	t.Run("Range bytes=0-10 returns 206 Partial Content, Content-Range, Accept-Ranges, and exact slice", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "/api/v1/files/download/"+meta.ID, nil)
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+		req.Header.Set("Range", "bytes=0-10")
+		req = req.WithContext(auth.WithUserID(req.Context(), userID))
+
+		rec := httptest.NewRecorder()
+		fh.DownloadHandler(rec, req)
+
+		if rec.Code != http.StatusPartialContent {
+			t.Fatalf("expected 206 Partial Content, got %d", rec.Code)
+		}
+
+		acceptRanges := rec.Header().Get("Accept-Ranges")
+		if acceptRanges != "bytes" {
+			t.Errorf("expected Accept-Ranges: bytes, got %q", acceptRanges)
+		}
+
+		contentRange := rec.Header().Get("Content-Range")
+		expectedContentRange := fmt.Sprintf("bytes 0-10/%d", len(payload))
+		if contentRange != expectedContentRange {
+			t.Errorf("expected Content-Range %q, got %q", expectedContentRange, contentRange)
+		}
+
+		expectedSlice := payload[0:11]
+		if !bytes.Equal(rec.Body.Bytes(), expectedSlice) {
+			t.Errorf("expected body slice %q (len %d), got %q (len %d)",
+				string(expectedSlice), len(expectedSlice), rec.Body.String(), rec.Body.Len())
+		}
+	})
+
+	t.Run("Range bytes=10-25 returns middle slice with 206 Partial Content", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "/api/v1/files/download/"+meta.ID, nil)
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+		req.Header.Set("Range", "bytes=10-25")
+		req = req.WithContext(auth.WithUserID(req.Context(), userID))
+
+		rec := httptest.NewRecorder()
+		fh.DownloadHandler(rec, req)
+
+		if rec.Code != http.StatusPartialContent {
+			t.Fatalf("expected 206 Partial Content, got %d", rec.Code)
+		}
+
+		contentRange := rec.Header().Get("Content-Range")
+		expectedContentRange := fmt.Sprintf("bytes 10-25/%d", len(payload))
+		if contentRange != expectedContentRange {
+			t.Errorf("expected Content-Range %q, got %q", expectedContentRange, contentRange)
+		}
+
+		expectedSlice := payload[10:26]
+		if !bytes.Equal(rec.Body.Bytes(), expectedSlice) {
+			t.Errorf("expected body slice %q (len %d), got %q (len %d)",
+				string(expectedSlice), len(expectedSlice), rec.Body.String(), rec.Body.Len())
 		}
 	})
 }

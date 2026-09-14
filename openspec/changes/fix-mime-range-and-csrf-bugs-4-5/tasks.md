@@ -1,8 +1,8 @@
 ## 1. Test Suite Coverage (RED State - Test Agent)
 
-- [ ] 1.1 Add unit tests in `file_download_test.go` for dynamic MIME type detection on download (verifying `.png`, `.jpg`, `.mp4`, `.txt`, `.json`, and unmapped fallback `application/octet-stream`)
-- [ ] 1.2 Add unit tests in `file_download_test.go` for HTTP Range requests (`Range: bytes=0-10`), asserting `206 Partial Content`, `Content-Range: bytes 0-10/<total>`, `Accept-Ranges: bytes`, and exact byte slice payload
-- [ ] 1.3 Add unit tests in `internal/auth/handler_session_test.go` for `RequireSameOrigin` validating mutating requests with custom ports (e.g. `Origin: http://localhost:32214` matching `X-Forwarded-Host: localhost:32214`)
+- [x] 1.1 Add unit tests in `file_download_test.go` for dynamic MIME type detection on download (verifying `.png`, `.jpg`, `.mp4`, `.txt`, `.json`, and unmapped fallback `application/octet-stream`)
+- [x] 1.2 Add unit tests in `file_download_test.go` for HTTP Range requests (`Range: bytes=0-10`), asserting `206 Partial Content`, `Content-Range: bytes 0-10/<total>`, `Accept-Ranges: bytes`, and exact byte slice payload
+- [x] 1.3 Add unit tests in `internal/auth/handler_session_test.go` for `RequireSameOrigin` validating mutating requests with custom ports (e.g. `Origin: http://localhost:32214` matching `X-Forwarded-Host: localhost:32214`)
 
 ## 2. Core Implementation (GREEN State - Code Agent)
 

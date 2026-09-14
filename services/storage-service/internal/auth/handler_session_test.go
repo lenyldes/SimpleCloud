@@ -325,4 +325,82 @@ func TestAuthHandlers_SessionAndProtection(t *testing.T) {
 			t.Errorf("expected 200 OK for safe GET request without Origin, got %d", rec.Code)
 		}
 	})
+
+	t.Run("RequireSameOrigin allows matching origin with custom port via X-Forwarded-Host", func(t *testing.T) {
+		nextCalled := false
+		protected := auth.RequireSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextCalled = true
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", nil)
+		req.Host = "internal:8080"
+		req.Header.Set("X-Forwarded-Host", "localhost:32214")
+		req.Header.Set("Origin", "http://localhost:32214")
+		rec := httptest.NewRecorder()
+
+		protected.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !nextCalled {
+			t.Errorf("expected 200 OK and next called for custom port X-Forwarded-Host matching origin, got %d", rec.Code)
+		}
+	})
+
+	t.Run("RequireSameOrigin allows origin with custom port when forwarded host omits port", func(t *testing.T) {
+		nextCalled := false
+		protected := auth.RequireSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextCalled = true
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", nil)
+		req.Host = "internal:8080"
+		req.Header.Set("X-Forwarded-Host", "localhost")
+		req.Header.Set("Origin", "http://localhost:32214")
+		rec := httptest.NewRecorder()
+
+		protected.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !nextCalled {
+			t.Errorf("expected 200 OK and next called when forwarded host omits port for same hostname, got %d", rec.Code)
+		}
+	})
+
+	t.Run("RequireSameOrigin allows origin with custom port matching Host header directly", func(t *testing.T) {
+		nextCalled := false
+		protected := auth.RequireSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextCalled = true
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", nil)
+		req.Host = "localhost:32214"
+		req.Header.Set("Origin", "http://localhost:32214")
+		rec := httptest.NewRecorder()
+
+		protected.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !nextCalled {
+			t.Errorf("expected 200 OK and next called for custom port Host matching origin, got %d", rec.Code)
+		}
+	})
+
+	t.Run("RequireSameOrigin rejects foreign origin even with identical custom port", func(t *testing.T) {
+		nextCalled := false
+		protected := auth.RequireSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextCalled = true
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/files/upload", nil)
+		req.Host = "localhost:32214"
+		req.Header.Set("X-Forwarded-Host", "localhost:32214")
+		req.Header.Set("Origin", "http://evil.com:32214")
+		rec := httptest.NewRecorder()
+
+		protected.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("expected 403 Forbidden for foreign origin with same port, got %d", rec.Code)
+		}
+		if nextCalled {
+			t.Error("expected inner handler not to be executed on CSRF mismatch")
+		}
+	})
 }
